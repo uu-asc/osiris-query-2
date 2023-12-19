@@ -7,7 +7,7 @@ from query import config, connection, execution
 from query.definition import get_sql
 
 
-OSIRIS_SCHEMA = config.load_schema('osiris')
+SCHEMA = config.load_schema('osiris')
 
 
 def execute_query(
