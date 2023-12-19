@@ -8,7 +8,6 @@ dependencies:
   # sql
   - sqlalchemy
   - oracledb
-  - pyodbc
   # scheduling
   - schedule
   # data
@@ -18,7 +17,6 @@ dependencies:
   - tabulate
   # visualization
   - altair
-  - matplotlib
   # io
   - xlrd
   - xlsxwriter
@@ -27,12 +25,6 @@ dependencies:
   - jupyter
   - jupyterlab
   - ipykernel
-  - flask
   # templating
   - jinja2
   - markdown
-  # statistics
-  - scipy
-  - scikit-learn
-  - statsmodels
-  - pymc
