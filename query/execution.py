@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 from jinja2 import Environment
@@ -11,7 +12,7 @@ from query import connection, definition
 def execute_query(
     query: TextClause|Path|str,
     /,
-    connector,
+    connector: Callable,
     path_to_credentials: str|Path,
     *,
     env: Environment|None = None,

@@ -1,3 +1,5 @@
+from typing import Callable
+
 from configparser import ConfigParser
 from pathlib import Path
 import urllib
@@ -5,7 +7,7 @@ import urllib
 from sqlalchemy import create_engine, Connection
 
 
-def get_db_credentials(path: str|Path) -> dict:
+def get_db_credentials(path: Path|str) -> dict:
     config_file = Path(path)
     with config_file.expanduser().open() as f:
         parser = ConfigParser()
@@ -44,6 +46,9 @@ def get_oracledb_con_to_oracle_db(
     return engine.connect()
 
 
-def get_connection_to_db(connector, path_to_credentials):
+def get_connection_to_db(
+    connector: Callable,
+    path_to_credentials: Path|str,
+):
     creds = get_db_credentials(path_to_credentials)
     return connector(**creds)
