@@ -1,0 +1,39 @@
+name: osiris_query_2
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - pip
+  # sql
+  - sqlalchemy
+  - cx_oracle
+  - oracledb
+  - pyodbc
+  # scheduling
+  - schedule
+  # data
+  - lxml
+  - pandas
+  - pyarrow
+  - tabulate
+  # visualization
+  - altair
+  - matplotlib
+  # io
+  - xlrd
+  - xlsxwriter
+  - openpyxl
+  # interaction
+  - jupyter
+  - jupyterlab
+  - ipykernel
+  - flask
+  # templating
+  - jinja2
+  - markdown
+  # statistics
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - pymc

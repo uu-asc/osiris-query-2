@@ -1,0 +1,8 @@
+__pycache__/
+.vscode/
+.ipynb_checkpoints/
+.env
+*.code-workspace
+definitions/*
+notebooks/*
+templates/*
