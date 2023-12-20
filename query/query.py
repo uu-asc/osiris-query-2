@@ -120,33 +120,33 @@ def compile_query(query : str) -> str:
 
 def translate_multiline(string : str) -> str:
     string = string.strip('\n ')
-    regex = re.compile("[\n\s]+")
+    regex = re.compile(r"[\n\s]+")
     return regex.sub(' ', string)
 
 
 def translate_is_na(string : str) -> str:
-    regex = re.compile("\s+is\s+(?:null|na)", flags=re.I)
+    regex = re.compile(r"\s+is\s+(?:null|na)", flags=re.I)
     return regex.sub('.isna()', string)
 
 
 def translate_is_not_na(string : str) -> str:
-    regex = re.compile("\s+is\s+not\s+(?:null|na)", flags=re.I)
+    regex = re.compile(r"\s+is\s+not\s+(?:null|na)", flags=re.I)
     return regex.sub('.notna()', string)
 
 
 def translate_contains(string : str) -> str:
-    regex = re.compile("\s+contains\s+(['\"].*?['\"])")
+    regex = re.compile(r"\s+contains\s+(['\"].*?['\"])")
     convert = lambda match: f".str.contains({match.group(1)}, na=False)"
     return regex.sub(convert, string)
 
 
 def translate_startswith(string : str) -> str:
-    regex = re.compile("\s+startswith\s+(['\"].*?['\"])")
+    regex = re.compile(r"\s+startswith\s+(['\"].*?['\"])")
     convert = lambda match: f".str.startswith({match.group(1)}, na=False)"
     return regex.sub(convert, string)
 
 
 def translate_date(string : str) -> str:
-    regex = re.compile("[^'\"](\d{4}-\d{2}-\d{2})")
+    regex = re.compile(r"[^'\"](\d{4}-\d{2}-\d{2})")
     convert = lambda match: f"'{match.group(1)}'"
     return regex.sub(convert, string)
