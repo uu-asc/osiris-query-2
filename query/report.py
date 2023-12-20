@@ -8,6 +8,7 @@ from markdown import Markdown
 import pandas as pd
 
 from query.utils import DotDict, Ts
+from query.config import get_paths_from_config
 
 
 def render_template(value, context):
@@ -18,7 +19,7 @@ def render_template(value, context):
 
 
 class Report:
-    TEMPLATES: Path = Path(__file__).resolve().parent.parent / 'templates'
+    TEMPLATES: get_paths_from_config('templates')
 
     def __init__(
         self,
@@ -27,7 +28,7 @@ class Report:
     ):
         template_paths = [
             template_path,
-            self.TEMPLATES,
+            *self.TEMPLATES,
         ]
         self.env = Environment(
             loader = FileSystemLoader(template_paths),

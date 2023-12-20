@@ -1,20 +1,25 @@
 from pathlib import Path
-from functools import singledispatch, wraps
 
 from jinja2 import (
     Environment,
     ChoiceLoader,
-    PackageLoader,
     FileSystemLoader,
     meta,
 )
 from sqlalchemy import text, TextClause
 
+from query.config import get_paths_from_config
 
-TEMPLATE_LOADER = ChoiceLoader([
-    PackageLoader('definitions', package_path='../definitions'),
-    FileSystemLoader('.'),
-])
+
+def get_template_loader():
+    paths = get_paths_from_config('queries')
+    return ChoiceLoader([
+        FileSystemLoader(paths),
+        FileSystemLoader('.'),
+    ])
+
+
+TEMPLATE_LOADER = get_template_loader()
 
 
 def get_environment() -> Environment:
