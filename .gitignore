@@ -6,3 +6,4 @@ __pycache__/
 definitions/*
 notebooks/*
 templates/*
+config/config.toml

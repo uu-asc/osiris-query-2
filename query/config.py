@@ -7,8 +7,11 @@ LIBPATH = Path(__file__).resolve().parent
 
 
 def load_config():
-    config_path = LIBPATH.parent / 'config' / 'config.toml'
-    with open(config_path, 'rb') as f:
+    config_dir = LIBPATH.parent / 'config'
+    config_file = config_dir / 'config.toml'
+    if not config_file.exists():
+        config_file = config_dir / 'config.default.toml'
+    with open(config_file, 'rb') as f:
         config = tomllib.load(f)
     return config
 
