@@ -7,7 +7,7 @@ from jinja2 import Environment, FileSystemLoader
 from markdown import Markdown
 import pandas as pd
 
-from query.utils import DotDict, Ts
+from query.utils import DotDict, TS
 from query.config import get_paths_from_config
 
 
@@ -196,6 +196,3 @@ class Report:
         conf = json.loads((cls.TEMPLATES / 'config.json').read_text())
         for pat, val in conf.items():
             pd.set_option(pat, val)
-
-
-TS = Ts()

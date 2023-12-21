@@ -79,3 +79,6 @@ class Stopwatch:
     @property
     def splits(self):
         return [t2 - t1 for t1, t2 in zip(self.times, self.times[1:])]
+
+
+TS = Ts()
