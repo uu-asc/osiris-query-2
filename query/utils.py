@@ -11,28 +11,6 @@ class DotDict(dict):
     __dir__ = dict.keys
 
 
-class Ts:
-    @property
-    def timestamp(self):
-        return f"{self.now:%d-%m-%Y %H:%M}"
-
-    @property
-    def datum(self):
-        return f"{self.now:%d-%m-%Y}"
-
-    @property
-    def ymd(self):
-        return f"{self.now:%Y%m%d}"
-
-    @property
-    def daymonth(self):
-        return f"{self.now:%d %B}"
-
-    @property
-    def now(self):
-        return pd.Timestamp.today()
-
-
 class Stopwatch:
     SPLIT = "[finished in ${time}]"
     TOTAL = """
@@ -79,6 +57,28 @@ class Stopwatch:
     @property
     def splits(self):
         return [t2 - t1 for t1, t2 in zip(self.times, self.times[1:])]
+
+
+class Ts:
+    @property
+    def timestamp(self):
+        return f"{self.now:%d-%m-%Y %H:%M}"
+
+    @property
+    def datum(self):
+        return f"{self.now:%d-%m-%Y}"
+
+    @property
+    def ymd(self):
+        return f"{self.now:%Y%m%d}"
+
+    @property
+    def daymonth(self):
+        return f"{self.now:%d %B}"
+
+    @property
+    def now(self):
+        return pd.Timestamp.today()
 
 
 TS = Ts()

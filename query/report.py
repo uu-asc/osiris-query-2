@@ -55,7 +55,7 @@ class Report:
         self.env.filters['as_template'] = as_template
 
         self.markdown = Markdown(extensions=['toc', 'extra'])
-        self.ts = Ts()
+        self.ts = TS
         self._meta    = DotDict()
         self._sql     = DotDict()
         self._tables  = DotDict()
