@@ -4,3 +4,6 @@ queries = "./definitions"
 templates = "./templates"
 output = "."
 tasks = "."
+
+[credentials]
+db1 = "~/credentials/db1.ini"
