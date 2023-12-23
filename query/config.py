@@ -41,12 +41,13 @@ def resolve_path(path: Path|str) -> Path:
     return path
 
 
-def get_paths_from_config(key: str) -> list[Path]:
+def get_paths_from_config(key: str, table: str = 'paths') -> list[Path]:
     """
     Retrieve paths from the configuration based on the specified key.
 
     Parameters:
     - key (str): The key to identify the paths in the configuration.
+    - table (str): The configuration table to search. Default is 'paths'.
 
     Returns:
     - List[Path]: A list of resolved Paths.
@@ -56,7 +57,7 @@ def get_paths_from_config(key: str) -> list[Path]:
     of paths, it will be returned as is. Each path in the resulting list is
     resolved using the `resolve_path` function.
     """
-    config = CONFIG['paths'][key]
+    config = CONFIG[table][key]
     paths = [config] if not isinstance(config, list) else config
     return [resolve_path(path) for path in paths]
 

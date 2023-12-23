@@ -18,11 +18,11 @@ def execute_query(
     dtype_backend: str|None = None,
     **kwargs
 ) -> pd.DataFrame|None:
-
+    path_to_credentials = config.get_paths_from_config('osiris', 'credentials')
     return execution.execute_query(
         query,
         connector = connection.get_oracledb_con_to_oracle_db,
-        path_to_credentials = f'~/credentials/UUSTPRD.ini',
+        path_to_credentials = path_to_credentials,
         parse_dates = parse_dates,
         index_col = index_col,
         dtype = dtype,
