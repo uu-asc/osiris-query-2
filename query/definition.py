@@ -36,7 +36,7 @@ def get_sql(
     env: Environment|None = None,
     save_to_path: Path|str = None,
     print_output: bool = False,
-    print_variables: bool = False,
+    print_vars: bool = False,
     **kwargs
 ) -> TextClause:
 
@@ -52,7 +52,7 @@ def get_sql(
         path_to_sql = Path(src).with_suffix('.sql').as_posix()
         src, *_ = TEMPLATE_LOADER.get_source(None, path_to_sql)
 
-    if print_variables:
+    if print_vars:
         ast = env.parse(src)
         variables = meta.find_undeclared_variables(ast)
         print(variables)
