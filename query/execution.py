@@ -6,9 +6,10 @@ from jinja2 import Environment
 from sqlalchemy import TextClause
 from sqlalchemy.exc import DatabaseError
 
-from query import connection, definition
+from query import connection, definition, utils
 
 
+@utils.add_to_docstring(definition.DOCSTRING)
 def execute_query(
     query: TextClause|Path|str,
     /,
@@ -22,7 +23,27 @@ def execute_query(
     dtype_backend: str = 'numpy_nullable', # numpy_nullable / pyarrow
     **kwargs
 ) -> pd.DataFrame|None:
+    """
+    Execute a SQL query and return the result as a pandas DataFrame.
 
+    Parameters:
+    - query (TextClause | Path | str): SQL query definition, file path, or raw SQL string.
+    - connector (Callable): A callable object that establishes a connection to the database.
+    - path_to_credentials (str | Path): Path to the credentials file or a string containing credentials.
+    - env (Environment | None, optional): Environment context for the query execution. Default is None.
+    - parse_dates (list | dict | None, optional): Columns to parse as dates. Default is None.
+    - index_col (str | list[str] | None, optional): Column(s) to set as index(MultiIndex). Default is None.
+    - dtype (str | dict | None, optional): Data type to force. Default is None.
+    - dtype_backend (str, optional): Data type backend for storage. Options: 'numpy_nullable' or 'pyarrow'.
+      Default is 'numpy_nullable'.
+    - **kwargs: Additional keyword arguments passed to the query definition and connection functions.
+
+    Returns:
+    - pd.DataFrame | None: A pandas DataFrame containing the query result, or None if an error occurs.
+
+    Raises:
+    - DatabaseError: If an error occurs during the query execution.
+    """
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
     sql = definition.get_sql(query, env=env, **kwargs)
     con = connection.get_connection_to_db(connector, path_to_credentials)

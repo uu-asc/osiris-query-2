@@ -1,5 +1,7 @@
 from time import perf_counter
 from string import Template
+from functools import wraps
+from typing import Callable
 
 import pandas as pd
 
@@ -9,6 +11,37 @@ class DotDict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
     __dir__ = dict.keys
+
+
+TEMPLATE = """$docstring
+
+Additional notes
+----------------
+$appendices"""
+
+
+def add_to_docstring(appendices: str|list[str]) -> Callable:
+    """
+    A decorator that appends additional information to the docstring of a function.
+
+    Parameters:
+    - appendices (str|list[str]): Text or list of texts to append.
+
+    Returns:
+    - callable: Decorated function.
+    """
+    appendices = [appendices] if isinstance(appendices, str) else appendices
+    template = Template(TEMPLATE)
+    def decorator(func):
+        func.__doc__ = template.substitute(
+            docstring = func.__doc__,
+            appendices = '\n'.join(appendices)
+        )
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 class Stopwatch:

@@ -12,6 +12,7 @@ from sqlparse.sql import Token, TokenList
 from sqlparse.tokens import CTE, DML
 
 from query.config import get_paths_from_config
+from query.utils import add_to_docstring
 
 
 def get_template_loader():
@@ -34,7 +35,6 @@ def get_environment() -> Environment:
 
 
 ENV = get_environment()
-
 UTIL_KEYWORDS = [
     'select',
     'where',
@@ -43,8 +43,17 @@ UTIL_KEYWORDS = [
     'random',
     'cte',
 ]
+DOCSTRING = """
+    Optional keywords:
+    - select (list[str]): Select only specified columns.
+    - where (list[str]): Select only rows that meet where criteria.
+    - order_by (list[str]): Order by.
+    - n (int): Fetch only first n records.
+    - random (bool): Randomize order of rows.
+"""
 
 
+@add_to_docstring(DOCSTRING)
 def get_sql(
     src: Path|str,
     *,
@@ -68,13 +77,6 @@ def get_sql(
 
     Returns:
     TextClause: The processed SQL query as a SQLAlchemy TextClause.
-
-    Optional keywords:
-    - select (list[str]): Select only specified columns.
-    - where (list[str]): Select only rows that meet where criteria.
-    - order_by (list[str]): Order by.
-    - n (int): Fetch only first n records.
-    - random (bool): Randomize order of rows.
     """
     if isinstance(src, TextClause):
         return src
@@ -97,7 +99,6 @@ def get_sql(
     rendered = template.render(**kwargs)
 
     if any(kwd in kwargs for kwd in UTIL_KEYWORDS):
-        print('wrapping sql')
         rendered = wrap_sql(rendered, **kwargs)
 
     sql = text(rendered)
