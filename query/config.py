@@ -34,7 +34,7 @@ def resolve_path(path: Path|str) -> Path:
     Raises:
     - AssertionError: If the resolved path does not exist.
     """
-    path = Path(path)
+    path = Path(path).expanduser()
     if not path.is_absolute():
         path = (LIBPATH / path).resolve()
     assert path.exists(), f"Config: '{path}' does not exist"
@@ -61,6 +61,20 @@ def get_paths_from_config(key: str, table: str = 'paths') -> list[Path]:
     paths = [config] if not isinstance(config, list) else config
     return [resolve_path(path) for path in paths]
 
+
+def get_path_from_config(key: str, table: str = 'paths') -> Path:
+    """
+    Retrieve path from the configuration based on the specified key.
+
+    Parameters:
+    - key (str): The key to identify the path in the configuration.
+    - table (str): The configuration table to search. Default is 'paths'.
+
+    Returns:
+    - Path: A resolved Path.
+    """
+    path = CONFIG[table][key]
+    return resolve_path(path)
 
 
 def load_config() -> dict[str, Any]:

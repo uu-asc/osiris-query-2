@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, Connection
 
 def get_db_credentials(path: Path|str) -> dict:
     config_file = Path(path)
-    with config_file.expanduser().open() as f:
+    with config_file.open() as f:
         parser = ConfigParser()
         parser.read_file(f)
     return dict(parser.items('credentials'))

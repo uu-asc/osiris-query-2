@@ -18,7 +18,7 @@ def execute_query(
     dtype_backend: str|None = None,
     **kwargs
 ) -> pd.DataFrame|None:
-    path_to_credentials = config.get_paths_from_config('osiris', 'credentials')
+    path_to_credentials = config.get_path_from_config('osiris', 'credentials')
     return execution.execute_query(
         query,
         connector = connection.get_oracledb_con_to_oracle_db,
