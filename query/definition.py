@@ -7,6 +7,9 @@ from jinja2 import (
     meta,
 )
 from sqlalchemy import text, TextClause
+import sqlparse
+from sqlparse.sql import Token, TokenList
+from sqlparse.tokens import CTE, DML
 
 from query.config import get_paths_from_config
 
@@ -30,19 +33,52 @@ def get_environment() -> Environment:
     )
 
 
+ENV = get_environment()
+
+UTIL_KEYWORDS = [
+    'select',
+    'where',
+    'order_by',
+    'n',
+    'random',
+    'cte',
+]
+
+
 def get_sql(
     src: Path|str,
     *,
     env: Environment|None = None,
-    save_to_path: Path|str = None,
+    save_to_path: Path|str|None = None,
     print_output: bool = False,
     print_vars: bool = False,
     **kwargs
 ) -> TextClause:
+    """
+    Retrieves a SQL query template from file or string, renders it with Jinja2,
+    and returns a TextClause.
 
+    Parameters:
+    - src (Path|str): Path to file or string containing the SQL query.
+    - env (Environment|None): Jinja2 environment. If not provided, the default environment is used.
+    - save_to_path (Path|str|None): Path to save rendered query.
+    - print_output (bool): If True, prints rendered query.
+    - print_vars (bool): If True, prints template variables.
+    - **kwargs: Additional keyword arguments to be passed to template.
+
+    Returns:
+    TextClause: The processed SQL query as a SQLAlchemy TextClause.
+
+    Optional keywords:
+    - select (list[str]): Select only specified columns.
+    - where (list[str]): Select only rows that meet where criteria.
+    - order_by (list[str]): Order by.
+    - n (int): Fetch only first n records.
+    - random (bool): Randomize order of rows.
+    """
     if isinstance(src, TextClause):
         return src
-    env = get_environment() if env is None else env
+    env = ENV if env is None else env
 
     if (
         isinstance(src, str)
@@ -59,6 +95,11 @@ def get_sql(
 
     template = env.from_string(src)
     rendered = template.render(**kwargs)
+
+    if any(kwd in kwargs for kwd in UTIL_KEYWORDS):
+        print('wrapping sql')
+        rendered = wrap_sql(rendered, **kwargs)
+
     sql = text(rendered)
 
     if print_output:
@@ -67,3 +108,65 @@ def get_sql(
         Path(save_to_path).write_text(sql.text)
 
     return sql
+
+
+def wrap_sql(
+    sql: str,
+    *,
+    env: Environment|None = None,
+    **kwargs
+) -> str:
+    """
+    Wraps SQL query with a wrapper template that allows for ad hoc
+    modifications of the query (such as: randomize order, fetch only first n
+    rows, etc.)
+
+    Parameters:
+    - sql (str): The input SQL query.
+    - env (Environment|None): The Jinja2 environment. Use default if None.
+    - **kwargs: Additional keyword arguments to be passed to wrapper.
+
+    Returns:
+    str: The wrapped SQL query.
+    """
+    tokens = sqlparse.parse(sql)[0].tokens
+    has_cte = any(token.ttype is CTE for token in tokens)
+    body, main_statement = split_sql_from_tokens(tokens)
+
+    env = ENV if env is None else env
+    template = env.get_template('utils/wrapper.sql')
+    rendered = template.render(
+        has_cte = has_cte,
+        body = body,
+        main_statement = main_statement,
+        **kwargs
+    )
+    return rendered
+
+
+def split_sql_from_tokens(
+    tokens: list[Token|TokenList]
+) -> tuple[str, str]:
+    """
+    Extracts the body (including comments, CTEs, etc.) and the main statement from a SQL query.
+
+    Parameters:
+    - tokens (list[Token|TokenList]): List of tokens representing the SQL query.
+
+    Returns:
+    tuple[str, str]: A tuple containing two strings:
+        - The body.
+        - The main statement.
+    """
+    body = ''
+    main_statement = ''
+    is_main = False
+
+    for token in tokens:
+        is_main = is_main or token.ttype is DML
+        if is_main:
+            main_statement += str(token)
+        else:
+            body += str(token)
+
+    return body, main_statement

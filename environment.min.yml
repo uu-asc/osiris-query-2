@@ -8,6 +8,7 @@ dependencies:
   # sql
   - sqlalchemy
   - oracledb
+  - sqlparse
   # scheduling
   - schedule
   # data
