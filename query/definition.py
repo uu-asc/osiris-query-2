@@ -11,8 +11,9 @@ import sqlparse
 from sqlparse.sql import Token, TokenList
 from sqlparse.tokens import CTE, DML
 
-from query.config import get_paths_from_config
-from query.utils import add_to_docstring
+from query import utils
+from query.config import CONFIG, get_paths_from_config
+
 
 
 def get_template_loader():
@@ -51,7 +52,7 @@ UTIL_KEYWORDS = [
     'aggfunc',
     'values',
 ]
-DOCSTRING = """
+DOCSTRING = f"""
     Optional keywords:
 
     CTE
@@ -89,15 +90,16 @@ DOCSTRING = """
         Whether to include null/NA values when aggregating.
         When True, group columns will be coalesced using `label_na`.
         Default False.
-    - label_na (str): Label for null/NA values. Default '<NA>'.
+    - label_na (str): Label for null/NA values. Default '{CONFIG['defaults']['aggregation']['label_na']}'.
     - totals (bool): Add totals. Default False.
     - grouping_sets (str | list[str]):
         What totals to group. By default total all combinations of groups.
-    - label_totals (str): What label to use for total rows. Default 'Totaal'.
+    - label_totals (str): What label to use for total rows. Default '{CONFIG['defaults']['aggregation']['label_totals']}'.
 """
 
 
-@add_to_docstring(DOCSTRING)
+@utils.add_keyword_defaults(CONFIG['defaults']['aggregation'])
+@utils.add_to_docstring(DOCSTRING)
 def get_sql(
     src: Path|str,
     *,

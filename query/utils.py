@@ -1,7 +1,7 @@
 from time import perf_counter
 from string import Template
 from functools import wraps
-from typing import Callable
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -39,6 +39,41 @@ def add_to_docstring(appendices: str|list[str]) -> Callable:
         )
         @wraps(func)
         def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def add_keyword_defaults(keywords: dict[str, Any]) -> Callable:
+    """
+    A decorator that adds default keyword arguments to the wrapped function.
+
+    Parameters:
+    - keywords (dict[str, Any]): A dictionary containing default keyword arguments.
+
+    Returns:
+    - callable: Decorated function.
+
+    The returned decorator, when applied to a function, merges the provided
+    default keyword arguments with any arguments passed to the decorated
+    function.
+
+    Example:
+    ```python
+    @add_keyword_defaults({"threshold": 0.5, "verbose": True})
+    def process_data(data, threshold=0.2, verbose=False):
+        # Function implementation
+        pass
+    ```
+
+    In the example above, the `process_data` function will have default keyword
+    arguments "threshold" and "verbose" added by the decorator, with the
+    provided values overridden if the caller specifies them explicitly.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            kwargs = keywords | kwargs
             return func(*args, **kwargs)
         return wrapper
     return decorator

@@ -7,3 +7,9 @@ tasks = "."
 
 [credentials]
 db1 = "~/credentials/db1.ini"
+
+[defaults]
+
+[defaults.aggregation]
+label_totals = "Total"
+label_na = "<NA>"

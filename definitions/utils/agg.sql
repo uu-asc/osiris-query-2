@@ -11,7 +11,7 @@ keep_na = { type = "bool", default = false }
 label_na = { type = "str", default = "<NA>" }
 totals = { type = "bool", default = false }
 grouping_sets = { type = "str|list[str]", optional = true }
-label_totals = { type = "str", default = "Totaal" }
+label_totals = { type = "str", default = "Total" }
 */
 {#
     if we don't keep null values,
@@ -32,9 +32,10 @@ label_totals = { type = "str", default = "Totaal" }
 {# set global values (to be used in macros below) #}
 {% set LABEL_NA = label_na | default('<NA>') %}
 {% set LABEL_VAL = label_val | default(aggfunc) %}
-{% set LABEL_TOTALS = label_totals | default("Totaal") %}
+{% set LABEL_TOTALS = label_totals | default("Total") %}
 {% from 'utils/agg/macro.values.jinja' import handle_values with context %}
 {% from 'utils/agg/macro.colnames.jinja' import handle_colnames with context %}
+{# render template #}
 {% block query %}{% endblock query %},
 
 {#
