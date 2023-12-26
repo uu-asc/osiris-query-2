@@ -5,6 +5,7 @@ __pycache__/
 *.code-workspace
 definitions/*
 !definitions/utils
+schema/*
 notebooks/*
 templates/*
 !*/.gitkeep
