@@ -1,0 +1,67 @@
+{% macro handle_values(aggfunc, values=none, distinct=false) %}
+{#
+    convert values into aggregation string
+    values can be:
+    - undefined
+    - string
+    - mapping
+    - list of strings
+    - list of mappings
+#}
+{% if not values %}
+{{ aggfunc }}(*) {{ LABEL_VAL }}
+{% elif values is string %}
+{{ _handle_string(
+    aggfunc,
+    item=values,
+    name=values,
+    distinct=distinct) }}
+{% elif values is mapping %}
+{{ _handle_mapping(aggfunc, item=values) }}
+{% elif values is iterable %}
+{% for item in values %}
+{% set j %}{% if not loop.last %},{% endif %}{% endset %}
+{% if item is mapping %}
+{{ _handle_mapping(aggfunc, item=item) | trim('\n') }}{{ j }}
+{% else %}
+{{ _handle_string(
+    aggfunc,
+    item=item,
+    name=item,
+    distinct=distinct) | trim('\n') }}{{ j }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro _handle_mapping(aggfunc, item) %}
+{#
+    convert mapping into aggregation string
+    if mapping contains aggfunc then this is used
+    else aggfunc is used
+
+    defers to `handle_column` and `handle_case`
+#}
+{% set aggfunc = item.aggfunc | default(aggfunc) %}
+{% if 'case' in item %}
+{{ _handle_case(aggfunc, item) }}
+{% else %}
+{{ _handle_column(aggfunc, item) }}
+{% endif %}
+{% endmacro %}
+
+
+{% macro _handle_column(aggfunc, item) %}
+{{ aggfunc }}({% if item.distinct %}distinct {% endif %}{{ item.column }}) {{ item.name | default(item.column) }}
+{% endmacro %}
+
+
+{% macro _handle_case(aggfunc, item) %}
+{{ aggfunc }}(case {{ item.case }} end ) {{ item.name | default(item.column) }}
+{% endmacro %}
+
+
+{% macro _handle_string(aggfunc, item, name, distinct) %}
+{{ aggfunc }}({% if distinct %}distinct {% endif %}{{ item }}) {{ name }}
+{% endmacro %}

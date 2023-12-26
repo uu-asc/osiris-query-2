@@ -27,11 +27,17 @@ TEMPLATE_LOADER = get_template_loader()
 
 
 def get_environment() -> Environment:
-    return Environment(
+    def raise_helper(msg):
+        # https://stackoverflow.com/a/29262304/10403856
+        raise ValueError(msg)
+
+    env = Environment(
         loader=TEMPLATE_LOADER,
         trim_blocks=True,
         lstrip_blocks=True
     )
+    env.globals['raise'] = raise_helper
+    return env
 
 
 ENV = get_environment()
@@ -42,14 +48,52 @@ UTIL_KEYWORDS = [
     'n',
     'random',
     'cte',
+    'aggfunc',
+    'values',
 ]
 DOCSTRING = """
     Optional keywords:
+
+    CTE
     - select (list[str]): Select only specified columns.
     - where (list[str]): Select only rows that meet where criteria.
     - order_by (list[str]): Order by.
     - n (int): Fetch only first n records.
     - random (bool): Randomize order of rows.
+
+    AGG
+    - aggfunc (str): Aggregation function to use.
+    - distinct (bool):
+        Whether to count only distinct rows/values. Default False.
+    - columns (list[str]): Group by on columns. Optional.
+    - values (str | list[str] | dict[str, str] | list[dict[str,str]]):
+        Values to aggregate. Optional.
+        Only works if group by is used within the aggregation.
+
+        Can take:
+        * string,
+        * mapping,
+        * list of strings,
+        * list of mappings
+
+        Mapping can have the following attributes:
+        * aggfunc: aggregation function to apply
+        * column: column to aggregate
+        * case: case statement to aggregate
+        * name: name for resulting aggregated column
+    - label_val (str):
+        What label to use for the aggregation result.
+        Only relevant when not grouping.
+        By default uses `aggfunc`.
+    - keep_na (bool):
+        Whether to include null/NA values when aggregating.
+        When True, group columns will be coalesced using `label_na`.
+        Default False.
+    - label_na (str): Label for null/NA values. Default '<NA>'.
+    - totals (bool): Add totals. Default False.
+    - grouping_sets (str | list[str]):
+        What totals to group. By default total all combinations of groups.
+    - label_totals (str): What label to use for total rows. Default 'Totaal'.
 """
 
 

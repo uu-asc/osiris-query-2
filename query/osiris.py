@@ -24,12 +24,18 @@ def execute_query(
 
     Parameters:
     - query (TextClause | Path | str): SQL query definition, file path, or raw SQL string.
-    - parse_dates (list | dict | None, optional): Columns to parse as dates. Default is None.
-    - index_col (str | list[str] | None, optional): Column(s) to set as index(MultiIndex). Default is None.
-    - dtype (str | dict | None, optional): Data type to force. Default is None.
-    - dtype_backend (str, optional): Data type backend for storage. Options: 'numpy_nullable' or 'pyarrow'.
-      Default is 'numpy_nullable'.
-    - **kwargs: Additional keyword arguments passed to the query definition and connection functions.
+    - parse_dates (list | dict | None, optional):
+        Columns to parse as dates. Default is None.
+    - index_col (str | list[str] | None, optional):
+        Column(s) to set as index(MultiIndex). Default is None.
+        Uses `columns` instead when aggregating if `index_col` is None.
+    - dtype (str | dict | None, optional):
+        Data type to force. Default is None.
+    - dtype_backend (str, optional):
+        Data type backend for storage. Options: 'numpy_nullable' or 'pyarrow'.
+        Default is 'numpy_nullable'.
+    - **kwargs:
+        Additional keyword arguments passed to the query definition.
 
     Returns:
     - pd.DataFrame | None: A pandas DataFrame containing the query result, or None if an error occurs.

@@ -1,0 +1,32 @@
+{% macro handle_colnames(values=none) %}
+{#
+    convert values into column names
+    values can be:
+    - undefined
+    - string
+    - mapping
+    - list of strings
+    - list of mappings
+#}
+{% if values is undefined %}
+{{ LABEL_VAL }}
+{% elif values is string %}
+{{ values }}
+{% elif values is mapping %}
+{{ _handle_mapping(values) }}
+{% elif values is iterable %}
+{% for item in values %}
+{% set j %}{% if not loop.last %},{% endif %}{% endset %}
+{% if item is mapping %}
+{{ _handle_mapping(item) | trim('\n') }}{{ j }}
+{% else %}
+{{ item }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro _handle_mapping(item) %}
+{{ item.name | default(item.column) }}
+{% endmacro %}

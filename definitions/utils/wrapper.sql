@@ -1,3 +1,8 @@
+{% if aggfunc or values %}
+{% extends 'utils/agg.sql' %}
+{% else %}
+{% extends 'utils/cte.sql' %}
+{% endif %}
 /*
 {% block comments %}
 [parameters]
@@ -5,28 +10,30 @@ select = { type = "list[str]", optional = true }
 where = { type = "list[str]", optional = true }
 order_by = { type = "list[str]", optional = true }
 n = { type = "int", optional = true }
-random = { type = "bool", optional = true, default = false }
-cte = { type = "str", optional = true, default = "cte$" }
+random = { type = "bool", default = false }
+cte = { type = "str", default = "cte$" }
 {% endblock comments %}
 */
+
 {% set cte = cte | default('cte$') %}
 {% set random = random | default(false) %}
+{% block query %}
 {{ body | trim('\n') }}{% if has_cte %},{% endif %}
 
 
 {% if not has_cte %}with {% endif %}cte$ as (
-{% filter indent(width=4, first=True) -%}
+{% filter indent(width=4, first=True) %}
 {{ main_statement }}
-{%- endfilter %}
+{% endfilter %}
 ),
 
 query$ as (
+    {% if select %}
     select
-        {% if select %}
-        {{ select | join(', ') }}
-        {% else %}
-        *
-        {% endif %}
+        {{ select | join(',\n') | indent(width=8) }}
+    {% else %}
+    select *
+    {% endif %}
     from {{ cte }}
     where
         1 = 1
@@ -41,11 +48,4 @@ query$ as (
     {% if n %}
     fetch first {{ n }} rows only
     {% endif %}
-)
-
-select *
-from query$
-{% if order_by %}
-order by
-    {{ order_by | join(', ') }}
-{% endif %}
+){% endblock query %}
