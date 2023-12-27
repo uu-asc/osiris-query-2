@@ -1,4 +1,5 @@
 import json
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -107,7 +108,16 @@ def load_config() -> dict[str, Any]:
     return config
 
 
+def add_library_to_sys_path() -> None:
+    paths = CONFIG['paths']['library']
+    if isinstance(paths, list):
+        sys.path.extend(paths)
+    else:
+        sys.path.append(paths)
+
+
 CONFIG = load_config()
+add_library_to_sys_path()
 
 
 def load_schema(schema: str) -> dict[str, Any]:
