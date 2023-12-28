@@ -28,12 +28,7 @@ cte = { type = "str", default = "cte$" }
 ),
 
 query$ as (
-    {% if select %}
-    select
-        {{ select | join(',\n') | indent(width=8) }}
-    {% else %}
     select *
-    {% endif %}
     from {{ cte }}
     where
         1 = 1
