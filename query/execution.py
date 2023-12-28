@@ -70,10 +70,10 @@ def execute_query(
     except DatabaseError as e:
         error_message = str(e.orig)
         print(
-f"""ORACLE error message: {error_message}
+f"""DATABASE error message: {error_message}
 
 {sql.text}
 
-ORACLE error message: {error_message}
+DATABASE error message: {error_message}
 """)
         return None
