@@ -19,11 +19,7 @@ def resolve_path(path: Path|str) -> Path:
     Returns:
     - Path: An absolute Path after resolution.
 
-    This function takes a Path or a string path as input and ensures
-    that the resulting Path is absolute. If the input path is relative,
-    it is resolved relative to the LIBPATH constant. The resolved path is
-    checked for existence, and an assertion error is raised if the
-    path does not exist.
+    This function takes a Path or a string path as input and ensures that the resulting Path is absolute. If the input path is relative, it is resolved relative to the LIBPATH constant. The resolved path is checked for existence, and an assertion error is raised if the path does not exist.
 
     Examples:
     >>> resolve_path(Path("example.txt"))
@@ -42,40 +38,44 @@ def resolve_path(path: Path|str) -> Path:
     return path
 
 
-def get_paths_from_config(key: str, table: str = 'paths') -> list[Path]:
+def get_paths_from_config(
+    key: str,
+    table: str = 'paths',
+    keep_shape: bool = False,
+) -> Path|list[Path]|dict[str, Path]:
     """
-    Retrieve paths from the configuration based on the specified key.
+    Retrieve paths from CONFIG based on the specified key.
 
     Parameters:
-    - key (str): The key to identify the paths in the configuration.
-    - table (str): The configuration table to search. Default is 'paths'.
+    - key (str): The key to identify the paths in CONFIG.
+    - table (str): The table in CONFIG to search. Default is 'paths'.
+    - keep_shape (bool):
+        Normally will coerce str and dict into list output. When `keep_shape` is set to True, a str will be converted to Path and a dict will be converted to a dict of Paths.
 
     Returns:
-    - List[Path]: A list of resolved Paths.
+    list[Path]: A list of resolved Paths (default).
 
-    If the specified key in the configuration is a single path, it will be
-    converted to a list containing that path. If the key is already a list
-    of paths, it will be returned as is. Each path in the resulting list is
-    resolved using the `resolve_path` function.
+    If `keep_shape` is True then may also return:
+    - Path: the resolved Path if input was a str.
+    - dict[str, Path]: a dictionary of resolved paths if input was dict.
+
+    Raises:
+    - TypeError: If an unexpected type is encountered while reading paths.
     """
     config = CONFIG[table][key]
-    paths = [config] if not isinstance(config, list) else config
-    return [resolve_path(path) for path in paths]
-
-
-def get_path_from_config(key: str, table: str = 'paths') -> Path:
-    """
-    Retrieve path from the configuration based on the specified key.
-
-    Parameters:
-    - key (str): The key to identify the path in the configuration.
-    - table (str): The configuration table to search. Default is 'paths'.
-
-    Returns:
-    - Path: A resolved Path.
-    """
-    path = CONFIG[table][key]
-    return resolve_path(path)
+    match config:
+        case list(config):
+            return [resolve_path(path) for path in config]
+        case dict(config):
+            if keep_shape:
+                return {key:resolve_path(path) for key, path in config.items()}
+            else:
+                return [resolve_path(path) for path in config.values()]
+        case str(config):
+            path = resolve_path(config)
+            return path if keep_shape else [path]
+        case _:
+            raise TypeError(f'Encountered unexpected type: {type(config)} while reading paths')
 
 
 def load_config() -> dict[str, Any]:
@@ -85,12 +85,9 @@ def load_config() -> dict[str, Any]:
     If 'config.toml' is not found, it falls back to 'config.default.toml'.
 
     Returns:
-    - Dict[str, Any]: A dictionary containing the loaded configuration.
+    dict[str, Any]: A dictionary containing the loaded configuration.
 
-    The function reads the configuration from a TOML file located in the
-    'config' directory. It first attempts to read 'config.toml' and, if not
-    found, falls back to 'config.default.toml'. The configuration is returned
-    as a dictionary.
+    The function reads the configuration from a TOML file located in the 'config' directory. It first attempts to read 'config.toml' and, if not found, falls back to 'config.default.toml'. The configuration is returned as a dictionary.
 
     Example:
     >>> load_config()
@@ -128,15 +125,9 @@ def load_schema(schema: str) -> dict[str, Any]:
     - schema (str): The name of the JSON schema file (without extension).
 
     Returns:
-    - Dict[str, Any]: A dictionary containing the loaded schema data.
+    dict[str, Any]: A dictionary containing the loaded schema data.
 
-    This function takes the name of a JSON schema file, resolves its path using
-    the configured schema directory, and loads the content of the schema file.
-    The loaded schema data is returned as a dictionary.
-
-    Example:
-    >>> load_schema("my_schema")
-    {'type': 'object', 'properties': {'key': {'type': 'string'}}, ...}
+    This function takes the name of a JSON schema file, resolves its path using the configured schema directory, and loads the content of the schema file. The loaded schema data is returned as a dictionary.
     """
     schema_path = resolve_path(CONFIG['paths']['schema'])
     schema_file = (schema_path / schema).with_suffix('.json')
