@@ -50,7 +50,7 @@ class Xquery:
     ### Queries in parallel
     Queries can be run sequentially or in parallel. The latter meaning that the result of each query will be concatenated (and afterwards deduplicated).
 
-    Args:
+    Parameters:
     - *args:
         Queries to apply. Can be a query string, a boolean index, or a callable that returns True or False for each column.
     - columns (list[str]|BooleanIndex|Callable, optional):
@@ -149,7 +149,7 @@ class Xquery:
         """
         Process multiple queries sequentially or in parallel.
 
-        Args:
+        Parameters:
         - df (pd.DataFrame): DataFrame to query.
         - args: Queries to apply.
         - in_parallel (bool):

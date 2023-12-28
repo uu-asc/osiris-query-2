@@ -110,12 +110,12 @@ def get_sql(
     **kwargs
 ) -> TextClause:
     """
-    Retrieves a SQL query template from file or string, renders it with Jinja2,
-    and returns a TextClause.
+    Retrieves a SQL query template from file or string, renders it with Jinja2, and returns a TextClause.
 
     Parameters:
     - src (Path|str): Path to file or string containing the SQL query.
-    - env (Environment|None): Jinja2 environment. If not provided, the default environment is used.
+    - env (Environment|None):
+        Jinja2 environment. If not provided, the default environment is used.
     - save_to_path (Path|str|None): Path to save rendered query.
     - print_output (bool): If True, prints rendered query.
     - print_vars (bool): If True, prints template variables.
@@ -164,9 +164,7 @@ def wrap_sql(
     **kwargs
 ) -> str:
     """
-    Wraps SQL query with a wrapper template that allows for ad hoc
-    modifications of the query (such as: randomize order, fetch only first n
-    rows, etc.)
+    Wraps SQL query with a wrapper template that allows for ad hoc modifications of the query (such as: randomize order, fetch only first n rows, etc.)
 
     Parameters:
     - sql (str): The input SQL query.
