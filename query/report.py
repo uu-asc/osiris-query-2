@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import FunctionType
 from typing import Callable, NewType
 
 from jinja2 import Environment, FileSystemLoader, pass_context
@@ -115,14 +116,11 @@ class Report:
         )
         self.env.policies['json.dumps_kwargs'] = {'sort_keys': False}
 
-        if post is None:
-            self.post = []
-        elif isinstance(post, Callable):
-            self.post = [post]
-        elif isinstance(post, list):
-            self.post = post
-        else:
-            raise TypeError("Post is not of type `Callable` or `list`")
+        match post:
+            case None:              self.post = []
+            case FunctionType():    self.post = [post]
+            case list():            self.post = post
+            case _: raise TypeError("Post is not of type `Callable` or `list`")
 
         @pass_context
         def as_template(context, value):
@@ -132,7 +130,7 @@ class Report:
         self.env.filters['as_template'] = as_template
 
         self.markdown = Markdown(extensions=['toc', 'extra'])
-        self.ts = TS
+        self.ts       = TS
         self._meta    = DotDict()
         self._sql     = DotDict()
         self._tables  = DotDict()
@@ -214,14 +212,11 @@ class Report:
         if layout_template is None:
             layout_template = self.layout_template
 
-        if post is None:
-            pp = self.post.copy()
-        elif post == False:
-            pp = []
-        elif isinstance(post, Callable):
-            pp = [*self.post, post]
-        elif isinstance(post, list):
-            pp = [*self.post, *post]
+        match post:
+            case None:              pp = self.post.copy()
+            case False:             pp = []
+            case FunctionType():    pp = [*self.post, post]
+            case list():            pp = [*self.post, *post]
 
         tpl = self.env.get_template(layout_template)
         naked_html = self.get_naked_html(markdown_template, **kwargs)
