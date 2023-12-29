@@ -64,14 +64,14 @@ def get_paths_from_config(
     """
     config = CONFIG[table][key]
     match config:
-        case list(config):
+        case list():
             return [resolve_path(path) for path in config]
-        case dict(config):
+        case dict():
             if keep_shape:
                 return {key:resolve_path(path) for key, path in config.items()}
             else:
                 return [resolve_path(path) for path in config.values()]
-        case str(config):
+        case str():
             path = resolve_path(config)
             return path if keep_shape else [path]
         case _:
