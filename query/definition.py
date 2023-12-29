@@ -1,12 +1,8 @@
 from pathlib import Path
 
-from jinja2 import (
-    Environment,
-    ChoiceLoader,
-    FileSystemLoader,
-    meta,
-)
+from jinja2 import Environment, BaseLoader, FileSystemLoader, meta
 from sqlalchemy import text, TextClause
+
 import sqlparse
 from sqlparse.sql import Token, TokenList
 from sqlparse.tokens import CTE, DML
@@ -15,16 +11,12 @@ from query import utils
 from query.config import CONFIG, get_paths_from_config
 
 
-
-def get_template_loader():
-    paths = get_paths_from_config('queries')
-    return ChoiceLoader([
-        FileSystemLoader(paths),
-        FileSystemLoader('.'),
-    ])
+def get_template_loader() -> FileSystemLoader:
+    paths = ['.', *get_paths_from_config('queries')]
+    return FileSystemLoader(paths)
 
 
-TEMPLATE_LOADER = get_template_loader()
+TEMPLATE_LOADER: BaseLoader = get_template_loader()
 
 
 def get_environment() -> Environment:
@@ -41,8 +33,10 @@ def get_environment() -> Environment:
     return env
 
 
-ENV = get_environment()
-UTIL_KEYWORDS = [
+ENV: Environment = get_environment()
+
+
+UTIL_KEYWORDS: list[str] = [
     'select',
     'where',
     'order_by',
@@ -52,7 +46,7 @@ UTIL_KEYWORDS = [
     'aggfunc',
     'values',
 ]
-DOCSTRING = f"""
+DOCSTRING: str = f"""
     Optional keywords:
 
     CTE
