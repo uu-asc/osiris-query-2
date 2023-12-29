@@ -71,7 +71,7 @@ class Report:
     - load_config() -> None: Load settings from CONFIG.
     """
 
-    TEMPLATES: get_paths_from_config('templates')
+    TEMPLATES: list[Path] = get_paths_from_config('templates')
 
     def __init__(
         self,
