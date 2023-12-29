@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 
-LIBPATH = Path(__file__).resolve().parent.parent
+LIBPATH: Path = Path(__file__).resolve().parent.parent
 
 
 def resolve_path(path: Path|str) -> Path:
