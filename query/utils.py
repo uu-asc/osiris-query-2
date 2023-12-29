@@ -279,9 +279,10 @@ class Stopwatch:
                 duration_length = 9
                 max_length = line_width - len(func_name) - duration_length
                 params_trunc = textwrap.shorten(params, width=max_length)
+                params_fill = f"{params_trunc:<{max_length}}"
                 stopwatch.start(
                     func_name = func_name,
-                    params = params_trunc,
+                    params = params_fill,
                     end=' ',
                 )
                 result = func(*args, **kwargs)
