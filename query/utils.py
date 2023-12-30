@@ -125,7 +125,7 @@ class Stopwatch:
     # templates
     START: Template|None = Template("""
 +==================================================================+
-    :: STOPWATCH ::
+    :: STOPWATCH :: ${name}
 
     started recording at: ${timestamp}
 +------------------------------------------------------------------+
@@ -142,8 +142,10 @@ class Stopwatch:
 
     def __init__(
         self,
+        name: str|None = None,
         duration_formatter: DurationFormatter = 'seconds'
     ) -> None:
+        self.name = '' if name is None else name
         self.times: list[float] = []
         self.running: bool = False
 
@@ -170,6 +172,7 @@ class Stopwatch:
         self.click()
         if self.START is not None:
             msg = self.START.substitute(
+                name = self.name,
                 timestamp = self.timestamp,
                 **kwargs
             )
@@ -183,6 +186,8 @@ class Stopwatch:
         duration = self.times[-1] - self.times[-2]
         if self.LAP is not None:
             msg = self.LAP.substitute(
+                name = self.name,
+                timestamp = self.timestamp,
                 lap = self.current_lap,
                 duration = self.duration_formatter(duration),
                 **kwargs
@@ -198,6 +203,8 @@ class Stopwatch:
         duration = now - self.times[0]
         if self.SPLIT is not None:
             msg = self.SPLIT.substitute(
+                name = self.name,
+                timestamp = self.timestamp,
                 duration = self.duration_formatter(duration),
                 **kwargs
             )
@@ -213,6 +220,7 @@ class Stopwatch:
         duration = self.times[-1] - self.times[0]
         if self.STOP is not None:
             msg = self.STOP.substitute(
+                name = self.name,
                 timestamp = self.timestamp,
                 duration= self.duration_formatter(duration),
                 **kwargs
