@@ -40,8 +40,8 @@ eval "$(conda shell.bash hook)"
 conda activate osiris_query_2
 
 # set pythonpath (extract from .env file and export it)
-pythonpath_line=$(grep '^PYTHONPATH=' "$env_path")
-eval "export $pythonpath_line"
+pythonpath=$(grep '^PYTHONPATH=' "$env_path")
+eval "export $pythonpath"
 
 # run script
 command=$(construct_command "$@")
