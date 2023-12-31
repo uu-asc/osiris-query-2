@@ -8,5 +8,7 @@ definitions/*
 schema/*
 notebooks/*
 templates/*
+scripts/*
+!scripts/
 !*/.gitkeep
 config/config.toml
