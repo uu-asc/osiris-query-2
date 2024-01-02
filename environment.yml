@@ -29,6 +29,8 @@ dependencies:
   - jupyterlab
   - ipykernel
   - flask
+  - pip:
+    - microdot
   # templating
   - jinja2
   - markdown
