@@ -5,16 +5,17 @@
 {% endif %}
 /*
 {% block comments %}
-[parameters]
-select = { type = "list[str]", optional = true }
-where = { type = "list[str]", optional = true }
-order_by = { type = "list[str]", optional = true }
+[parameters.cte]
+select = { type = "str|list[str]|dict[str, str]", optional = true }
+where = { type = "str|list[str]", optional = true }
+order_by = { type = "str|list[str]", optional = true }
 n = { type = "int", optional = true }
 random = { type = "bool", default = false }
 cte = { type = "str", default = "cte$" }
 {% endblock comments %}
 */
 
+{% from 'utils/cte/macro.where.jinja' import handle_where %}
 {% set cte = cte | default('cte$') %}
 {% set random = random | default(false) %}
 {% block query %}
@@ -30,13 +31,9 @@ cte = { type = "str", default = "cte$" }
 query$ as (
     select *
     from {{ cte }}
-    where
-        1 = 1
-        {% if where %}
-        {% for criterium in where %}
-        and {{ criterium }}
-        {% endfor %}
-        {% endif %}
+    {% if where %}
+    {{ handle_where(where) | indent(width=8) | trim('\n') }}
+    {% endif %}
     {% if random %}
     order by dbms_random.value
     {% endif %}

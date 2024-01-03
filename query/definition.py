@@ -50,9 +50,9 @@ DOCSTRING: str = f"""
     Optional keywords:
 
     CTE
-    - select (list[str]): Select only specified columns.
-    - where (list[str]): Select only rows that meet where criteria.
-    - order_by (list[str]): Order by.
+    - select (str|list[str]|dict[str, str]): Select only specified columns.
+    - where (str|list[str]): Select only rows that meet where criteria.
+    - order_by (str|list[str]): Order by.
     - n (int): Fetch only first n records.
     - random (bool): Randomize order of rows.
 

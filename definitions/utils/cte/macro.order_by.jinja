@@ -1,0 +1,10 @@
+{% macro handle_order_by(order_by) %}
+{% if order_by is string %}
+order by {{ order_by }}
+{% elif order_by is sequence %}
+order by
+    {{ order_by | join(',\n') | indent(width=4) }}
+{% else %}
+{{ raise('CTE: Cannot process the `order_by` clause. Supported types: str, list') }}
+{% endif %}
+{% endmacro %}

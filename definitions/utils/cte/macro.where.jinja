@@ -1,0 +1,12 @@
+{% macro handle_where(where) %}
+{% if where is string %}
+where {{ where }}
+{% elif where is sequence %}
+where
+    {% for criterium in where %}
+    {% if not loop.first %}and {% endif %}{{ criterium }}
+    {% endfor %}
+{% else %}
+{{ raise('CTE: Cannot process the `where` clause. Supported types: str, list') }}
+{% endif %}
+{% endmacro %}

@@ -1,0 +1,21 @@
+{% macro handle_select(select) %}
+{% if select is string %}
+{{ select }}
+{% elif select is mapping %}
+{{ _handle_mapping(select) }}
+{% elif select is sequence %}
+{{ select | join(',\n') }}
+{% else %}
+{{ raise('CTE: Cannot process the `select` clause. Supported types: str, list, dict') }}
+{% endif %}
+{% endmacro %}
+
+{% macro _handle_mapping(select) %}
+{% for column, alias in select.items() %}
+{{ _write_column_alias(column, alias) }}{% if not loop.last %},{{ '\n' }}{% endif %}
+{% endfor %}
+{% endmacro %}
+
+{% macro _write_column_alias(column, alias) %}
+{{ column }}{% if alias %} {{ alias }}{% endif %}
+{% endmacro %}
