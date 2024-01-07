@@ -86,6 +86,13 @@ def add_keyword_defaults(keywords: dict[str, Any]) -> Callable:
     return decorator
 
 
+def init_notebook_folder():
+    from pathlib import Path
+    path = Path()
+    for folder in  ['queries', 'output', 'data']:
+        (path / folder).mkdir(exist_ok=True)
+
+
 class Stopwatch:
     """
     Simple stopwatch.
