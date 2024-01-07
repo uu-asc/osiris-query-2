@@ -58,3 +58,100 @@ def execute_query(
         dtype_backend = dtype_backend,
         **kwargs
     )
+
+
+def find_table(
+    *args: str,
+    where: list|None = None,
+    **kwargs
+) -> pd.DataFrame:
+    """
+    Search for tables in the database based on specified criteria.
+
+    Parameters:
+    - *args (str): Substrings for matching table name.
+    - where (list|None): Optional parameter allowing additional conditions for the query. Defaults to None.
+    - **kwargs: Additional keyword arguments to be passed to the underlying `execute_query` function.
+
+    Returns:
+    - pd.DataFrame: A DataFrame containing all tables meeting the specified criteria.
+    """
+    criteria = []
+    for arg in args:
+        criteria.append(f"table_name like '%{arg.upper()}%'")
+
+    where = criteria if where is None else [*criteria, *where]
+
+    df = execute_query(
+        'reference/all_tables',
+        where = where,
+        **kwargs
+    )
+    return df
+
+
+def find_column(
+    *args: str,
+    table: str|None = None,
+    data_type: str|None = None,
+    where: list|None = None,
+    **kwargs
+) -> pd.DataFrame:
+    """
+    Search for columns in the database based on specified criteria.
+
+    Parameters:
+    - *args (str): Substrings for matching column name.
+    - table (str|None): Optional parameter specifying the table name for additional filtering. Defaults to None.
+    - data_type (str|None): Optional parameter specifying the data type for additional filtering. Defaults to None.
+    - where (list|None): Optional parameter allowing additional conditions for the query. Defaults to None.
+    - **kwargs: Additional keyword arguments to be passed to the underlying execute_query function.
+
+    Returns:
+    - pd.DataFrame: A DataFrame containing all columns meeting the specified criteria.
+    """
+
+    criteria = []
+    for arg in args:
+        criteria.append(f"column_name like '%{arg.upper()}%'")
+
+    where = criteria if where is None else [*criteria, *where]
+
+    if table:
+        assert isinstance(table, str), "Table needs to be a string"
+        where.append(f"table_name like '%{table.upper()}%'")
+
+    if data_type:
+        assert isinstance(data_type, str), "Data_type needs to be a string"
+        where.append(f"table_name like '%{data_type.upper()}%'")
+
+    df = execute_query(
+        'reference/all_columns',
+        where = where,
+        **kwargs
+    )
+    return df
+
+
+def peek(
+    table_name: str,
+    n: int = 10,
+    **kwargs
+) -> pd.DataFrame|None:
+    """
+    Peek at first `n` results from `table_name`.
+
+    Parameters:
+    - table_name (str): Name of table to peek at.
+    - n (int): Number of rows to return, defaults to 10.
+    - **kwargs: Additional keyword arguments to be passed to the underlying execute_query function.
+
+    Returns:
+    - pd.DataFrame: A DataFrame containing the first `n` result from `table_name`.
+    """
+    return execute_query(
+        'reference/table',
+        table = table_name,
+        n = n,
+        **kwargs
+    )
