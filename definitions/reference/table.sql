@@ -1,2 +1,2 @@
 select *
-from {{ tabel }}
+from {{ table }}
