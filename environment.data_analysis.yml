@@ -1,4 +1,4 @@
-name: osiris_query_2
+name: data_analysis
 channels:
   - conda-forge
   - defaults
@@ -35,6 +35,7 @@ dependencies:
   - jinja2
   - markdown
   # statistics
+  - fuzzywuzzy
   - scipy
   - scikit-learn
   - statsmodels
