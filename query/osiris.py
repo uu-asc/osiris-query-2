@@ -123,7 +123,7 @@ def find_column(
 
     if data_type:
         assert isinstance(data_type, str), "Data_type needs to be a string"
-        where.append(f"table_name like '%{data_type.upper()}%'")
+        where.append(f"data_type like '%{data_type.upper()}%'")
 
     df = execute_query(
         'reference/all_columns',
