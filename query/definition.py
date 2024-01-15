@@ -11,21 +11,30 @@ from query import utils
 from query.config import CONFIG, get_paths_from_config
 
 
-def get_template_loader() -> FileSystemLoader:
-    paths = ['.', *get_paths_from_config('queries')]
+def get_template_loader(
+    paths: Path|str|list[Path|str]|None = None,
+) -> FileSystemLoader:
+    if paths is None:
+        paths = []
+    elif isinstance(paths, (Path, str)):
+        paths = [paths]
+    paths = [*paths, '.', *get_paths_from_config('queries')]
     return FileSystemLoader(paths)
 
 
-TEMPLATE_LOADER: BaseLoader = get_template_loader()
+def get_environment(
+    paths: Path|str|list[Path|str]|None = None,
+    loader: BaseLoader|None = None,
+) -> Environment:
+    if loader is None:
+        loader = get_template_loader(paths)
 
-
-def get_environment() -> Environment:
     def raise_helper(msg):
         # https://stackoverflow.com/a/29262304/10403856
         raise ValueError(msg)
 
     env = Environment(
-        loader=TEMPLATE_LOADER,
+        loader=loader,
         trim_blocks=True,
         lstrip_blocks=True
     )
