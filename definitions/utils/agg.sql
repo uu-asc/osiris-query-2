@@ -22,17 +22,23 @@ label_totals = { type = "str", default = "Total" }
 {% include 'utils/agg/block.assert.sql' %}
 {% set aggfunc = aggfunc | default(none) %}
 {% set distinct = distinct | default(false) %}
-{% set keep_na = keep_na | default(false) %}
+{# coerce `columns` to list #}
 {% if columns is string %}
 {% set columns = [columns] %}
 {% endif %}
+{# coerce `where` to list #}
+{% if where is string %}
+{% set where = [where] %}
+{% elif where is undefined or where is none %}
+{% set where = [] %}
+{% endif %}
+{# coerce `having` to list #}
+{% if having is string %}
+{% set having = [having] %}
+{% endif %}
+{# handle `keep_na` #}
+{% set keep_na = keep_na | default(false) %}
 {% if not keep_na %}
-    {# coerce `where` to list #}
-    {% if where is string %}
-    {% set where = [where] %}
-    {% elif where is undefined or where is none %}
-    {% set where = [] %}
-    {% endif %}
     {# append "col is not null" for all `columns` to where clause #}
     {% for column in columns %}
         {% set _ = where.append(column ~ " is not null") %}
