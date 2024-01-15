@@ -23,6 +23,9 @@ label_totals = { type = "str", default = "Total" }
 {% set aggfunc = aggfunc | default(none) %}
 {% set distinct = distinct | default(false) %}
 {% set keep_na = keep_na | default(false) %}
+{% if columns is string %}
+{% set columns = [columns] %}
+{% endif %}
 {% if not keep_na %}
     {# coerce `where` to list #}
     {% if where is string %}
