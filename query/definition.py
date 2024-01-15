@@ -128,7 +128,7 @@ def get_sql(
         and not src.lower().startswith('select ')
     ):
         path_to_sql = Path(src).with_suffix('.sql').as_posix()
-        src, *_ = TEMPLATE_LOADER.get_source(None, path_to_sql)
+        src, *_ = env.loader.get_source(None, path_to_sql)
 
     if print_vars:
         ast = env.parse(src)
