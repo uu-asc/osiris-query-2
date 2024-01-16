@@ -1,4 +1,5 @@
 from pathlib import Path
+from string import Template
 
 import pandas as pd
 from sqlalchemy import TextClause
@@ -60,9 +61,17 @@ def execute_query(
     )
 
 
+SEARCH_STRINGS = {
+    'like': Template("${field} like '%${arg}%'"),
+    'regex': Template("regexp_like(${field}, '${arg}')"),
+    'exact': Template("${field} = '${arg}'"),
+}
+
+
 def find_table(
     *args: str,
     where: list|None = None,
+    how: str = 'like',
     **kwargs
 ) -> pd.DataFrame:
     """
@@ -71,16 +80,21 @@ def find_table(
     Parameters:
     - *args (str): Substrings for matching table name.
     - where (list|None): Optional parameter allowing additional conditions for the query. Defaults to None.
+    - how (str): One of:
+        - 'like': use like to match
+        - 'regex': use regex to match
+        - 'exact': exact match
     - **kwargs: Additional keyword arguments to be passed to the underlying `execute_query` function.
 
     Returns:
     - pd.DataFrame: A DataFrame containing all tables meeting the specified criteria.
     """
-    criteria = []
-    for arg in args:
-        criteria.append(f"table_name like '%{arg.upper()}%'")
+    tpl = SEARCH_STRINGS[how]
 
-    where = criteria if where is None else [*criteria, *where]
+    where = [] if where is None else where
+    for arg in args:
+        criterium = tpl.substitute(field='table_name', arg=arg.upper())
+        where.append(criterium)
 
     df = execute_query(
         'reference/all_tables',
@@ -95,6 +109,7 @@ def find_column(
     table: str|None = None,
     data_type: str|None = None,
     where: list|None = None,
+    how: str = 'like',
     **kwargs
 ) -> pd.DataFrame:
     """
@@ -105,25 +120,31 @@ def find_column(
     - table (str|None): Optional parameter specifying the table name for additional filtering. Defaults to None.
     - data_type (str|None): Optional parameter specifying the data type for additional filtering. Defaults to None.
     - where (list|None): Optional parameter allowing additional conditions for the query. Defaults to None.
+    - how (str): One of:
+        - 'like': use like to match
+        - 'regex': use regex to match
+        - 'exact': exact match
     - **kwargs: Additional keyword arguments to be passed to the underlying execute_query function.
 
     Returns:
     - pd.DataFrame: A DataFrame containing all columns meeting the specified criteria.
     """
+    tpl = SEARCH_STRINGS[how]
 
-    criteria = []
+    where = [] if where is None else where
     for arg in args:
-        criteria.append(f"column_name like '%{arg.upper()}%'")
-
-    where = criteria if where is None else [*criteria, *where]
+        criterium = tpl.substitute(field='column_name', arg=arg.upper())
+        where.append(criterium)
 
     if table:
         assert isinstance(table, str), "Table needs to be a string"
-        where.append(f"table_name like '%{table.upper()}%'")
+        criterium = tpl.substitute(field='table_name', arg=table.upper())
+        where.append(criterium)
 
     if data_type:
         assert isinstance(data_type, str), "Data_type needs to be a string"
-        where.append(f"data_type like '%{data_type.upper()}%'")
+        criterium = tpl.substitute(field='data_type', arg=data_type.upper())
+        where.append(criterium)
 
     df = execute_query(
         'reference/all_columns',
