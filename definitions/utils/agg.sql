@@ -98,11 +98,15 @@ agg$ as (
 select
     {% if columns %}
     {% for column in columns %}
+    {% if not totals and not keep_na %}
+    {{ column }},
+    {% else %}
     case
-        when {{ column }} is not null then {{ column }}
+        when {{ column }} is not null then to_char({{ column }})
         when {{ column}}$group = 0 then '{{ LABEL_NA }}'
         else '{{ LABEL_TOTALS }}'
     end {{ column }},
+    {% endif %}
     {% endfor %}
     {% endif %}
     {% filter indent(width=4) %}
