@@ -57,7 +57,10 @@ def execute_query(
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
     sql = definition.get_sql(query, env=env, **kwargs)
     con = connection.get_connection_to_db(connector, path_to_credentials)
-    index_col = index_col if index_col is not None else kwargs.get('columns')
+    if index_col is None:
+        index_col = kwargs.get('columns')
+    elif index_col == False:
+        index_col = None
     try:
         return pd.read_sql_query(
             sql,
