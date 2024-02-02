@@ -70,7 +70,7 @@ SEARCH_STRINGS = {
 
 def find_table(
     *args: str,
-    where: list|None = None,
+    where: list|str|None = None,
     how: str = 'like',
     **kwargs
 ) -> pd.DataFrame:
@@ -152,6 +152,26 @@ def find_column(
         **kwargs
     )
     return df
+
+
+def get_table(
+    table_name: str,
+    **kwargs
+) -> pd.DataFrame|None:
+    """
+    Fetch all results from `table_name`.
+
+    Parameters:
+    - table_name (str): Name of table to fetch.
+
+    Returns:
+    - pd.DataFrame: A DataFrame containing the data from `table_name`.
+    """
+    return execute_query(
+        'reference/table',
+        table = table_name,
+        **kwargs
+    )
 
 
 def peek(
