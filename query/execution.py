@@ -1,4 +1,5 @@
 from pathlib import Path
+from string import Template
 from typing import Callable
 
 import pandas as pd
@@ -8,6 +9,20 @@ from sqlalchemy.exc import DatabaseError
 
 from query import connection, definition, utils
 from query.definition import get_sql, get_params
+
+
+ERROR_TEMPLATE = Template("""
+Database error message: ${error_message}
+Parameters: ${params}
+Missing: ${missing}
+------------------------------------------------------------------------
+
+${sql}
+
+------------------------------------------------------------------------
+Database error message: ${error_message}
+"""
+)
 
 
 @utils.add_to_docstring(definition.DOCSTRING)
@@ -72,12 +87,14 @@ def execute_query(
             dtype_backend = dtype_backend,
         )
     except DatabaseError as e:
-        error_message = str(e.orig)
-        print(
-f"""DATABASE error message: {error_message}
-
-{sql.text}
-
-DATABASE error message: {error_message}
-""")
+        params = get_params(query)
+        missing = [k for k in params if k not in kwargs]
+        info = str(e.orig)
+        error_statement = ERROR_TEMPLATE.substitute(
+            sql = sql.text,
+            error_message = info,
+            params = params,
+            missing = missing,
+        )
+        print(error_statement)
         return None
