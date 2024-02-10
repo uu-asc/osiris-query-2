@@ -1,3 +1,18 @@
+"""
+Execute queries on the OSIRIS query database.
+
+execute_query():
+    Execute a SQL query and return the result as a pandas DataFrame.
+get_table():
+    Fetch all results from `table_name`.
+peek():
+    Peek at first `n` results from `table_name`.
+find_table():
+    Search for tables in the database based on specified criteria.
+find_column():
+    Search for columns in the database based on specified criteria.
+"""
+
 from pathlib import Path
 from string import Template
 
@@ -110,6 +125,8 @@ def find_column(
     data_type: str|None = None,
     where: list|None = None,
     how: str = 'like',
+    how_data_type: str = 'like',
+    how_table: str = 'exact',
     **kwargs
 ) -> pd.DataFrame:
     """
@@ -138,11 +155,13 @@ def find_column(
 
     if table:
         assert isinstance(table, str), "Table needs to be a string"
+        tpl = SEARCH_STRINGS[how_table]
         criterium = tpl.substitute(field='table_name', arg=table.upper())
         where.append(criterium)
 
     if data_type:
         assert isinstance(data_type, str), "Data_type needs to be a string"
+        tpl = SEARCH_STRINGS[how_data_type]
         criterium = tpl.substitute(field='data_type', arg=data_type.upper())
         where.append(criterium)
 
