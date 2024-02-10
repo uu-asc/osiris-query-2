@@ -5,7 +5,7 @@ import pandas as pd
 from sqlalchemy import TextClause
 
 from query import config, connection, definition, execution, utils
-from query.definition import get_sql
+from query.definition import get_sql, get_params
 
 
 SCHEMA = config.load_schema('osiris')

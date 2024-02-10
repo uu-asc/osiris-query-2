@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import TypeAlias
 
 from jinja2 import Environment, BaseLoader, FileSystemLoader, meta
 from sqlalchemy import text, TextClause
@@ -9,6 +10,12 @@ from sqlparse.tokens import CTE, DML
 
 from query import utils
 from query.config import CONFIG, get_paths_from_config
+
+
+SqlString: TypeAlias = str
+
+
+TextClause.__repr__ = lambda self: self.text
 
 
 def get_template_loader(
@@ -104,7 +111,7 @@ DOCSTRING: str = f"""
 @utils.add_keyword_defaults(CONFIG['defaults']['aggregation'])
 @utils.add_to_docstring(DOCSTRING)
 def get_sql(
-    src: Path|str,
+    source: Path|str,
     *,
     env: Environment|None = None,
     save_to_path: Path|str|None = None,
@@ -116,7 +123,7 @@ def get_sql(
     Retrieves a SQL query template from file or string, renders it with Jinja2, and returns a TextClause.
 
     Parameters:
-    - src (Path|str): Path to file or string containing the SQL query.
+    - source (Path|str): Path to file or string containing the SQL query.
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
     - save_to_path (Path|str|None): Path to save rendered query.
@@ -127,30 +134,22 @@ def get_sql(
     Returns:
     TextClause: The processed SQL query as a SQLAlchemy TextClause.
     """
-    if isinstance(src, TextClause):
-        return src
+    if isinstance(source, TextClause):
+        return source
     env = ENV if env is None else env
-
-    if (
-        isinstance(src, str)
-        and '\n' not in src
-        and not src.lower().startswith('select ')
-    ):
-        path_to_sql = Path(src).with_suffix('.sql').as_posix()
-        src, *_ = env.loader.get_source(None, path_to_sql)
+    source = try_path(source, env=env)
 
     if print_vars:
-        ast = env.parse(src)
-        variables = meta.find_undeclared_variables(ast)
+        variables = get_params(source, env=env)
         print(variables)
 
-    template = env.from_string(src)
+    template = env.from_string(source)
     rendered = template.render(**kwargs)
 
     if any(kwd in kwargs for kwd in UTIL_KEYWORDS):
         rendered = wrap_sql(rendered, **kwargs)
 
-    sql = text(rendered)
+    sql = TextClause(rendered)
 
     if print_output:
         print(sql.text)
@@ -158,6 +157,78 @@ def get_sql(
         Path(save_to_path).write_text(sql.text)
 
     return sql
+
+
+def get_params(
+    source: Path|str,
+    *,
+    env: Environment|None = None,
+) -> set[str]:
+    """
+    Get parameters in `source`.
+
+    Parameters:
+    - source (Path|str): Path to file or string containing the SQL query.
+    - env (Environment|None):
+        Jinja2 environment. If not provided, the default environment is used.
+
+    Returns:
+    set: Set of variables in query statement.
+    """
+    env = ENV if env is None else env
+    source = try_path(source, env=env)
+
+    ast = env.parse(source)
+    variables = meta.find_undeclared_variables(ast)
+    return variables
+
+
+def try_path(
+    source: Path|str,
+    *,
+    env: Environment|None = None,
+) -> SqlString:
+    """
+    Test if `source` is path and if so load query statement from it. Else do nothing.
+
+    Parameters:
+    - source (Path|str): Path to file or string containing the SQL query.
+    - env (Environment|None):
+        Jinja2 environment. If not provided, the default environment is used.
+
+    Returns:
+    SqlString: A string representing a sql query.
+    """
+    if is_path(source):
+        env = ENV if env is None else env
+        path_to_sql = Path(source).with_suffix('.sql').as_posix()
+        source, *_ = env.loader.get_source(None, path_to_sql)
+    return source
+
+
+def is_path(source: Path|str) -> bool:
+    """
+    Test if source is a path (and not a sql statement).
+    Assumes that if source:
+    - is a Path then True
+    - is a string with newline then False
+    - is a single string starting with 'select ' then False
+    - else True
+
+    Parameters:
+    - source (Path|str):
+        Source to be tested. Could be a string representing a path or a sql statement.
+
+    Returns:
+    bool: Whether the source is a path or a sql statement.
+    """
+    if isinstance(source, Path):
+        return True
+    if '\n' in source:
+        return False
+    if source.lower().startswith('select '):
+        return False
+    return True
 
 
 def wrap_sql(

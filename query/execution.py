@@ -7,6 +7,7 @@ from sqlalchemy import TextClause
 from sqlalchemy.exc import DatabaseError
 
 from query import connection, definition, utils
+from query.definition import get_sql, get_params
 
 
 @utils.add_to_docstring(definition.DOCSTRING)
