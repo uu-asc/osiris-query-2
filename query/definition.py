@@ -40,12 +40,16 @@ def get_environment(
         # https://stackoverflow.com/a/29262304/10403856
         raise ValueError(msg)
 
+    def format_string(text: str, fmt: str, *args):
+        return fmt.format(text, *args)
+
     env = Environment(
         loader=loader,
         trim_blocks=True,
         lstrip_blocks=True
     )
     env.globals['raise'] = raise_helper
+    env.filters['format_string'] = format_string
     return env
 
 
