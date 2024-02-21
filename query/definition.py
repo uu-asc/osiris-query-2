@@ -115,7 +115,7 @@ def get_sql(
     *,
     env: Environment|None = None,
     save_to_path: Path|str|None = None,
-    print_output: bool = False,
+    print_sql: bool = False,
     print_vars: bool = False,
     **kwargs
 ) -> TextClause:
@@ -127,7 +127,7 @@ def get_sql(
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
     - save_to_path (Path|str|None): Path to save rendered query.
-    - print_output (bool): If True, prints rendered query.
+    - print_sql (bool): If True, prints rendered query.
     - print_vars (bool): If True, prints template variables.
     - **kwargs: Additional keyword arguments to be passed to template.
 
@@ -151,7 +151,7 @@ def get_sql(
 
     sql = TextClause(rendered)
 
-    if print_output:
+    if print_sql:
         print(sql.text)
     if save_to_path:
         Path(save_to_path).write_text(sql.text)
