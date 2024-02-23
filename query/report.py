@@ -1,9 +1,10 @@
 from pathlib import Path
 from types import FunctionType
-from typing import Callable, NewType
+from typing import Any, Callable, NewType
 
 from jinja2 import Environment, FileSystemLoader, pass_context
 from markdown import Markdown
+from markdown.extensions.toc import TocExtension
 import pandas as pd
 
 from query.config import CONFIG, get_paths_from_config
@@ -80,6 +81,7 @@ class Report:
         layout_template: str|None = None,
         template_paths: Path|str|list[Path|str]|None = None,
         post: OptionalPostProcessors = None,
+        toc_settings: dict[str, Any]|None = None,
     ):
         """
         Parameters:
@@ -129,7 +131,9 @@ class Report:
 
         self.env.filters['as_template'] = as_template
 
-        self.markdown = Markdown(extensions=['toc', 'extra'])
+        toc_settings = {} if toc_settings is None else toc_settings
+        toc = TocExtension(**toc_settings)
+        self.markdown = Markdown(extensions=[toc, 'extra'])
         self.ts       = TS
         self._meta    = DotDict()
         self._sql     = DotDict()
@@ -219,13 +223,14 @@ class Report:
             case list():            pp = [*self.post, *post]
 
         tpl = self.env.get_template(layout_template)
-        naked_html = self.get_naked_html(markdown_template, **kwargs)
+        content = self.get_naked_html(markdown_template, **kwargs)
 
         for postprocessor in pp:
-            content = postprocessor(naked_html)
+            content = postprocessor(content)
         html = tpl.render(
-            content=content,
-            toc=self.markdown.toc_tokens,
+            content = content,
+            toc_tokens = self.markdown.toc_tokens,
+            toc = self.markdown.toc,
             **kwargs
         )
         return html
