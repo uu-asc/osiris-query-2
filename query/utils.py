@@ -99,6 +99,10 @@ class Ts:
         return f"{self.now:%Y%m%d}"
 
     @property
+    def year(self):
+        return f"{self.now:%Y}"
+
+    @property
     def daymonth(self):
         return f"{self.now:%d %B}"
 
