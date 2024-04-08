@@ -17,6 +17,7 @@ dependencies:
   - pandas
   - pyarrow
   - tabulate
+  - faker
   # visualization
   - altair
   - matplotlib
