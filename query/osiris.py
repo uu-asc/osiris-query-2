@@ -33,8 +33,9 @@ def execute_query(
     index_col: str|list[str]|None = None,
     dtype: str|dict|None = None,
     dtype_backend: str|None = None,
+    squeeze: bool = True,
     **kwargs
-) -> pd.DataFrame|None:
+) -> pd.DataFrame|pd.Series|None:
     """
     Execute a SQL query and return the result as a pandas DataFrame.
 
@@ -50,6 +51,8 @@ def execute_query(
     - dtype_backend (str, optional):
         Data type backend for storage. Options: 'numpy_nullable' or 'pyarrow'.
         Default is 'numpy_nullable'.
+    - squeeze (bool):
+        Return Series if output has only one column. Default is True.
     - **kwargs:
         Additional keyword arguments passed to the query definition.
 
@@ -72,6 +75,7 @@ def execute_query(
         index_col = index_col,
         dtype = dtype,
         dtype_backend = dtype_backend,
+        squeeze = squeeze,
         **kwargs
     )
 
