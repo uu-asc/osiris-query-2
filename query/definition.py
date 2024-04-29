@@ -195,6 +195,8 @@ def try_path(
     """
     Test if `source` is path and if so load query statement from it. Else do nothing.
 
+    If `source` seems to be a path then it is tested if it has a '.sql' suffix. If not then it will be added to the path.
+
     Parameters:
     - source (Path|str): Path to file or string containing the SQL query.
     - env (Environment|None):
@@ -205,8 +207,10 @@ def try_path(
     """
     if is_path(source):
         env = ENV if env is None else env
-        path_to_sql = Path(source).with_suffix('.sql').as_posix()
-        source, *_ = env.loader.get_source(None, path_to_sql)
+        path = Path(source)
+        if path.suffix != '.sql':
+            path = path.with_suffix(path.suffix + '.sql')
+        source, *_ = env.loader.get_source(None, path.as_posix())
     return source
 
 
