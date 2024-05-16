@@ -13,6 +13,7 @@ from query.definition import get_sql, get_params
 
 ERROR_TEMPLATE = Template("""
 Database error message: ${error_message}
+Query: ${query_name}
 Parameters: ${params}
 Missing: ${missing}
 ------------------------------------------------------------------------
@@ -94,11 +95,13 @@ def execute_query(
         return df
 
     except DatabaseError as e:
+        query_name = query if not '\n' in query else '<n/a>'
         params = get_params(query)
         missing = [k for k in params if k not in kwargs]
         info = str(e.orig)
         error_statement = ERROR_TEMPLATE.substitute(
             sql = sql.text,
+            query_name = query_name,
             error_message = info,
             params = params,
             missing = missing,
