@@ -41,3 +41,5 @@ dependencies:
   - scikit-learn
   - statsmodels
   - pymc
+  # cryptography
+  - cryptography
