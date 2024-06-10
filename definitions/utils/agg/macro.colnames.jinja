@@ -20,7 +20,7 @@
 {% if item is mapping %}
 {{ _handle_mapping(item) | trim('\n') }}{{ j }}
 {% else %}
-{{ item }}
+{{ item }}{{ j }}
 {% endif %}
 {% endfor %}
 {% endif %}
