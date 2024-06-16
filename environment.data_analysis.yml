@@ -30,8 +30,6 @@ dependencies:
   - jupyterlab
   - ipykernel
   - flask
-  - pip:
-    - microdot
   # templating
   - jinja2
   - markdown
@@ -43,3 +41,8 @@ dependencies:
   - pymc
   # cryptography
   - cryptography
+  # other dependencies
+  - pip:
+    - O365
+    - pdfminer.six
+    - microdot
