@@ -58,7 +58,7 @@
 
 
 {% macro _handle_case(aggfunc, item) %}
-{{ aggfunc }}(case {{ item.case }} end ) {{ item.name | default(item.column) }}
+{{ aggfunc }}({% if item.distinct %}distinct {% endif %}case {{ item.case }} end ) {{ item.name | default(item.column) }}
 {% endmacro %}
 
 
