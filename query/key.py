@@ -303,6 +303,9 @@ class KeyExtractor:
             nonlocal output
             if s.index.nlevels > 1:
                 for lvl in s.index.levels[0]:
+                    if not lvl in s.index:
+                        # handle lvl not being present
+                        continue
                     name = ''
                     if s.index.levels[0].name:
                         name = f'{s.index.levels[0].name}: '
