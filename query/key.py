@@ -327,7 +327,7 @@ class KeyExtractor:
             return output
 
 
-#region KeyExtractorDataFrame
+#region DataFrame
 @pd.api.extensions.register_dataframe_accessor("askeys")
 class KeyExtractorDataFrame(KeyExtractor):
     """
@@ -335,7 +335,7 @@ class KeyExtractorDataFrame(KeyExtractor):
     """
 
 
-#region KeyExtractorSeries
+#region Series
 @pd.api.extensions.register_series_accessor("askeys")
 class KeyExtractorSeries(KeyExtractor):
     """
