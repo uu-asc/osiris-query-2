@@ -119,8 +119,8 @@ class KeyExtractor:
     ) -> None:
         path = Path(path)
         if self.collected_groups:
-            for (groep, item) in self.s.groupby(self.collected_groups):
-                key = '_'.join(str(i) for i in groep)
+            for (group, item) in self.s.groupby(self.collected_groups):
+                key = '_'.join(str(i) for i in group)
                 fname = f'{TS.ymd}.{key}.{len(item)}.txt'
                 item.to_csv(path / fname, index=False)
         else:
@@ -433,8 +433,8 @@ class KeyExtractorSeries(KeyExtractor):
     ) -> None:
         path = Path(path)
         if self.collected_groups:
-            for (groep, item) in self.s.groupby(self.collected_groups):
-                key = '_'.join(str(i) for i in groep)
+            for (group, item) in self.s.groupby(self.collected_groups):
+                key = '_'.join(str(i) for i in group)
                 fname = f'{TS.ymd}.{key}.{len(item)}.txt'
                 item.to_csv(path / fname, index=False)
         else:
