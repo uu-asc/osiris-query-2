@@ -1,6 +1,7 @@
 from string import Template
 from functools import wraps
 from typing import Any, Callable
+from pathlib import Path
 
 import pandas as pd
 
@@ -112,3 +113,30 @@ class Ts:
 
 
 TS = Ts()
+
+
+def export_to_excel(
+    df: pd.DataFrame,
+    fn: Path|str,
+    sheet_name: str = 'data',
+):
+    fn = Path(fn)
+    with pd.ExcelWriter(
+        fn,
+        date_format = 'DD-MM-YYYY',
+        datetime_format = 'DD-MM-YYYY',
+    ) as writer:
+
+        n_rows, n_cols = df.shape
+        idx_nlevels = df.index.nlevels
+        col_nlevels = df.columns.nlevels
+
+        df.to_excel(
+            writer,
+            sheet_name = sheet_name,
+            freeze_panes = (col_nlevels, idx_nlevels),
+        )
+
+        sheet = writer.sheets[sheet_name]
+        sheet.autofit()
+        sheet.autofilter(col_nlevels - 1, 0, n_rows, idx_nlevels + n_cols - 1)
