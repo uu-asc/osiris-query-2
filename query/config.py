@@ -114,7 +114,7 @@ def add_library_to_sys_path() -> None:
 
 
 CONFIG = load_config()
-add_library_to_sys_path()
+# add_library_to_sys_path()
 
 
 def load_schema(schema: str) -> dict[str, Any]:
