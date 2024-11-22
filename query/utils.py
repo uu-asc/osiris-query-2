@@ -13,14 +13,16 @@ class DotDict(dict):
     __dir__ = dict.keys
 
 
-TEMPLATE = """$docstring
+DOCSTRING_TEMPLATE = Template(
+"""$docstring
 
 Additional notes
 ----------------
 $appendices"""
+)
 
 
-def add_to_docstring(appendices: str|list[str]) -> Callable:
+def add_to_docstring(*appendices: str) -> Callable:
     """
     A decorator that appends additional information to the docstring of a function.
 
@@ -30,10 +32,8 @@ def add_to_docstring(appendices: str|list[str]) -> Callable:
     Returns:
     - callable: Decorated function.
     """
-    appendices = [appendices] if isinstance(appendices, str) else appendices
-    template = Template(TEMPLATE)
     def decorator(func):
-        func.__doc__ = template.substitute(
+        func.__doc__ = DOCSTRING_TEMPLATE.substitute(
             docstring = func.__doc__,
             appendices = '\n'.join(appendices)
         )
