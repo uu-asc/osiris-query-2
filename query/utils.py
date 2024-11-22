@@ -79,10 +79,50 @@ def add_keyword_defaults(keywords: dict[str, Any]) -> Callable:
     return decorator
 
 
+QUICK_FILTER_TEMPLATE = Template(
+"""    - $column_name (str|list|None):
+        Select rows where "$column_name" in given values."""
+)
+
+
+def add_quick_filter(column_name: str) -> Callable:
+    """Create a decorator that adds SQL-style IN clause filtering for a specified column.
+
+    This decorator allows functions to accept an additional keyword argument (named by column_name) which gets transformed into a SQL-style IN clause and added to the 'where' parameter of the decorated function.
+
+    Parameters
+    ----------
+    column_name : str
+        Name of the column to filter on. This will be used both as the keyword argument name and in the generated SQL clause.
+
+    Returns
+    -------
+    Callable
+        A decorator that processes the specified column filter.
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            key: str | list[str] | None = kwargs.pop(column_name, None)
+            if key is not None:
+                keys = [key] if isinstance(key, str) else key
+                keys_as_string = ', '.join(f"'{n}'" for n in keys)
+                formatted = f"{column_name} in ({keys_as_string})"
+
+                where = kwargs.get('where', [])
+                where = [where] if isinstance(where, str) else list(where)
+                where.append(formatted)
+                kwargs['where'] = where
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
 def init_notebook_folder():
     from pathlib import Path
     path = Path()
-    for folder in  ['queries', 'output', 'data']:
+    for folder in ['queries', 'output', 'data']:
         (path / folder).mkdir(exist_ok=True)
 
 

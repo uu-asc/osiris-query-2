@@ -24,8 +24,15 @@ from query.definition import get_sql, get_params
 
 SCHEMA = config.load_schema('osiris')
 
+quickfilter_docstrings = ['    QUICK FILTERS', *[
+    utils.QUICK_FILTER_TEMPLATE.substitute(column_name = column_name)
+    for column_name in ['studentnummer', 'sinh_id', 'io_aanvr_id']
+]]
 
-@utils.add_to_docstring(definition.DOCSTRING)
+@utils.add_to_docstring(definition.DOCSTRING, *quickfilter_docstrings)
+@utils.add_quick_filter('studentnummer')
+@utils.add_quick_filter('sinh_id')
+@utils.add_quick_filter('io_aanvr_id')
 def execute_query(
     query: TextClause|Path|str,
     parse_dates: list|dict|None = None,
