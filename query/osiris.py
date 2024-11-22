@@ -21,7 +21,6 @@ from sqlalchemy import TextClause
 
 from query import config, connection, definition, execution, utils
 from query.definition import get_sql, get_params
-# from query.key import KeyExtractor
 
 SCHEMA = config.load_schema('osiris')
 
