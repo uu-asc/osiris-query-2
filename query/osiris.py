@@ -205,7 +205,7 @@ def get_table(
 
 def peek(
     table_name: str,
-    n: int = 10,
+    n: int = 7,
     **kwargs
 ) -> pd.DataFrame|None:
     """
@@ -213,7 +213,7 @@ def peek(
 
     Parameters:
     - table_name (str): Name of table to peek at.
-    - n (int): Number of rows to return, defaults to 10.
+    - n (int): Number of rows to return, defaults to 7.
     - **kwargs: Additional keyword arguments to be passed to the underlying execute_query function.
 
     Returns:
