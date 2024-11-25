@@ -4,13 +4,19 @@ Execute queries on the OSIRIS query database.
 execute_query():
     Execute a SQL query and return the result as a pandas DataFrame.
 get_table():
-    Fetch all results from `table_name`.
+    Fetch all results from `table`.
 peek():
-    Peek at first `n` results from `table_name`.
+    Peek at first `n` results from `table`.
+get_values():
+    Get distinct values from `column` in `table`.
+describe_column():
+    Return descriptive statistics for `column` in `table`.
 find_table():
     Search for tables in the database based on specified criteria.
 find_column():
     Search for columns in the database based on specified criteria.
+sanity():
+    Perform a sanity check on staleness of data.
 """
 
 from pathlib import Path
@@ -186,44 +192,44 @@ def find_column(
 
 
 def get_table(
-    table_name: str,
+    table: str,
     **kwargs
 ) -> pd.DataFrame|None:
     """
-    Fetch all results from `table_name`.
+    Fetch all results from `table`.
 
     Parameters:
-    - table_name (str): Name of table to fetch.
+    - table (str): Name of table to fetch.
 
     Returns:
-    - pd.DataFrame: A DataFrame containing the data from `table_name`.
+    - pd.DataFrame: A DataFrame containing the data from `table`.
     """
     return execute_query(
         'reference/table',
-        table = table_name,
+        table = table,
         **kwargs
     )
 
 
 def peek(
-    table_name: str,
+    table: str,
     n: int = 7,
     **kwargs
 ) -> pd.DataFrame|None:
     """
-    Peek at first `n` results from `table_name`.
+    Peek at first `n` results from `table`.
 
     Parameters:
-    - table_name (str): Name of table to peek at.
+    - table (str): Name of table to peek at.
     - n (int): Number of rows to return, defaults to 7.
     - **kwargs: Additional keyword arguments to be passed to the underlying execute_query function.
 
     Returns:
-    - pd.DataFrame: A DataFrame containing the first `n` result from `table_name`.
+    - pd.DataFrame: A DataFrame containing the first `n` result from `table`.
     """
     return execute_query(
         'reference/table',
-        table = table_name,
+        table = table,
         n = n,
         **kwargs
     )
