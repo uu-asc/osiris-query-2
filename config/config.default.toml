@@ -14,3 +14,10 @@ db1 = "~/credentials/db1.ini"
 [defaults.aggregation]
 label_totals = "Total"
 label_na = "<NA>"
+
+[sanity]
+
+[sanity.osiris]
+table = "table"
+mutation_date_column = "mutation_date_column"
+threshold_in_hours = 1

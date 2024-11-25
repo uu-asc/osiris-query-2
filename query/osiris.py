@@ -22,7 +22,9 @@ from sqlalchemy import TextClause
 from query import config, connection, definition, execution, utils
 from query.definition import get_sql, get_params
 
+
 SCHEMA = config.load_schema('osiris')
+
 
 quickfilter_docstrings = ['    QUICK FILTERS', *[
     utils.QUICK_FILTER_TEMPLATE.substitute(column_name = column_name)
@@ -225,3 +227,37 @@ def peek(
         n = n,
         **kwargs
     )
+
+
+@utils.add_keyword_defaults(config.CONFIG['sanity']['osiris'])
+def sanity(
+    mutation_date_column: str = 'mutatie_datum',
+    table: str = 'ost_student_inschrijfhist',
+    threshold_in_hours: int = 1,
+) -> pd.Series:
+    """
+    Perform sanity check on a table by identifying if the time between the last mutation and the current time exceeds a given threshold.
+
+    Parameters:
+    - mutation_date_column (str): Name of the column in the table that contains the mutation date. Default is 'mutatie_datum'.
+    - table (str): Name of the table to perform the sanity check on. Default is 'ost_student_inschrijfhist'.
+    - threshold_in_hours (int): Threshold value in hours. Default is 1 hour.
+
+    Returns:
+    - pd.DataFrame: A DataFrame containing the last mutation date, the time since the last mutation date, the threshold in hours and if this time is below ('Y') or above ('N') the set threshold.
+
+    Warnings:
+    - Raises a warning if the time since last mutation exceeds the threshold.
+    """
+    s = execute_query(
+        'sanity/last_mutation',
+        mutation_date_column = mutation_date_column,
+        table = table,
+        threshold_in_hours = threshold_in_hours
+    )
+    if s.loc['below_threshold'] == 'N':
+        import warnings
+        warnings.warn(
+            f"Stale data in db\nTime since last mutation in table '{table}' exceeds threshold of {threshold_in_hours} hours.\nLast mutation was at {s.loc['max_mutation_date']}."
+        )
+    return s
