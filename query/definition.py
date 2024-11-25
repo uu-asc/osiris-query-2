@@ -230,10 +230,10 @@ def is_path(source: Path|str) -> bool:
     Returns:
     bool: Whether the source is a path or a sql statement.
     """
-    if isinstance(source, TextClause):
-        return False
     if isinstance(source, Path):
         return True
+    if isinstance(source, TextClause):
+        return False
     if '\n' in source:
         return False
     if source.lower().startswith('select '):

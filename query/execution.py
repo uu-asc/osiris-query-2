@@ -11,6 +11,7 @@ from query import connection, definition, utils
 from query.definition import get_sql, get_params
 
 
+DEFAULT_QUERY_NAME = '<n/a>'
 ERROR_TEMPLATE = Template("""
 Database error message: ${error_message}
 Query: ${query_name}
@@ -75,6 +76,7 @@ def execute_query(
     - DatabaseError: If an error occurs during the query execution.
     """
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
+    query_name = query if definition.is_path(query) else DEFAULT_QUERY_NAME
     sql = definition.get_sql(query, env=env, **kwargs)
     con = connection.get_connection_to_db(connector, path_to_credentials)
     if index_col is None:
@@ -93,11 +95,10 @@ def execute_query(
         if squeeze and len(df.columns) == 1:
             return df.squeeze(axis=1)
         if squeeze and len(df) == 1:
-            return df.squeeze()
+            return df.squeeze().rename(query_name)
         return df
 
     except DatabaseError as e:
-        query_name = query if not '\n' in query else '<n/a>'
         params = get_params(query)
         missing = [k for k in params if k not in kwargs]
         info = str(e.orig)
