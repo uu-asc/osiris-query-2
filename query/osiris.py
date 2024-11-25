@@ -268,6 +268,43 @@ def get_values(
     return execute_query(sql, table=table, column=column, n=max_results)
 
 
+def describe_column(
+    table: str,
+    column: str,
+    n_sample_values: int = 7
+) -> pd.Series:
+    """
+    Returns descriptive statistics and value samples for a database column; including row counts, distinct value counts, nulls, most frequent values, and a sample of actual values.
+
+    Parameters:
+    - table (str): Name of the database table to analyze.
+    - column (str): Name of the column to analyze.
+    - n_sample_values (int): Maximum number of distinct values to show in sample_values. Defaults to 7.
+
+    Returns:
+    - pd.Series: Statistics about the column, with index labels:
+        - total_rows: Total number of rows in table
+        - non_null_rows: Number of non-null values
+        - unique_values: Number of distinct values
+        - min_value: Minimum value in column
+        - max_value: Maximum value in column
+        - null_percentage: Fraction of rows that are null (0-1)
+        - distinct_percentage: Fraction of non-null values that are unique (0-1)
+        - most_frequent_value: Mode (most common value)
+        - most_frequent_count: Frequency count of the mode
+        - sample_values: Comma-separated string of up to n_sample_values distinct values
+        Series name is set to "{table}/{column}".
+    """
+    s = execute_query(
+        'reference/column_stats',
+        table = table,
+        column = column,
+        n_sample_values = n_sample_values,
+    )
+    s = s.rename(f"{table}/{column}")
+    return s
+
+
 @utils.add_keyword_defaults(config.CONFIG['sanity']['osiris'])
 def sanity(
     mutation_date_column: str = 'mutatie_datum',
