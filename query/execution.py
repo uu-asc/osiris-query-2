@@ -92,6 +92,8 @@ def execute_query(
         )
         if squeeze and len(df.columns) == 1:
             return df.squeeze(axis=1)
+        if squeeze and len(df) == 1:
+            return df.squeeze()
         return df
 
     except DatabaseError as e:
