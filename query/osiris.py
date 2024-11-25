@@ -9,6 +9,10 @@ peek():
     Peek at first `n` results from `table`.
 get_values():
     Get distinct values from `column` in `table`.
+get_sql():
+    Get SQL query from `source`.
+get_params():
+    Get parameters used in the SQL query from `source`
 describe_column():
     Return descriptive statistics for `column` in `table`.
 find_table():
