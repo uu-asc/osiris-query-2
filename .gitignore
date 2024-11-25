@@ -3,9 +3,6 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 *.code-workspace
-definitions/*
-!definitions/utils
-!definitions/reference
 schema/*
 notebooks/*
 templates/*
