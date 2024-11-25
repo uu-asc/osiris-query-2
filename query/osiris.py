@@ -229,6 +229,45 @@ def peek(
     )
 
 
+def get_values(
+    table: str,
+    column: str,
+    max_results: int|None = 50
+) -> pd.Series:
+    """
+    Retrieve unique values from a specified column in a database table.
+
+    Parameters:
+    - table (str): Name of the database table to query.
+    - column (str): Name of the column from which to retrieve unique values.
+    - max_results (int or None): Maximum number of results to return. If None, returns all unique values.
+        Defaults to 50.
+
+    Returns:
+    - pd.Series: A pandas Series containing the unique values from the specified column, sorted in ascending order.
+
+    Examples:
+        >>> get_values('customers', 'country')
+        0    Australia
+        1    Canada
+        2    France
+        ...
+        Name: country, dtype: object
+
+        >>> get_values('orders', 'status', max_results=3)
+        0    cancelled
+        1    completed
+        2    pending
+        Name: status, dtype: object
+    """
+    sql = """
+    select distinct {{ column }}
+    from {{ table }}
+    order by {{ column }}
+    """
+    return execute_query(sql, table=table, column=column, n=max_results)
+
+
 @utils.add_keyword_defaults(config.CONFIG['sanity']['osiris'])
 def sanity(
     mutation_date_column: str = 'mutatie_datum',
