@@ -35,6 +35,12 @@ sample_vals as (
         order by {{ column }}
         fetch first {{ n_sample_values }} rows only
     )
+),
+column_type as (
+    select data_type
+    from all_tab_columns
+    where table_name = upper('{{ table }}')
+    and column_name = upper('{{ column }}')
 )
 select
     s.*,
@@ -44,5 +50,6 @@ select
             from {{ table }}
         )
         else (select sample_list || '...' from sample_vals)
-    end sample_values
+    end sample_values,
+    (select data_type from column_type) data_type
 from stats s
