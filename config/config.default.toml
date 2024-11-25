@@ -14,7 +14,3 @@ db1 = "~/credentials/db1.ini"
 [defaults.aggregation]
 label_totals = "Total"
 label_na = "<NA>"
-
-[report]
-
-[report.styler]
