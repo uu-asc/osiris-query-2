@@ -9,6 +9,7 @@ from sqlparse.sql import Token, TokenList
 from sqlparse.tokens import CTE, DML
 
 from query import utils
+from query import aggspec
 from query.config import CONFIG, get_paths_from_config
 
 
@@ -241,6 +242,7 @@ def is_path(source: Path|str) -> bool:
     return True
 
 
+@aggspec.build_value_specs
 def wrap_sql(
     sql: str,
     *,
