@@ -7,7 +7,7 @@ import urllib
 from sqlalchemy import create_engine, Connection
 
 
-def get_db_credentials(path: Path|str) -> dict:
+def get_db_credentials(path: Path | str) -> dict:
     config_file = Path(path)
     with config_file.open() as f:
         parser = ConfigParser()
@@ -15,21 +15,10 @@ def get_db_credentials(path: Path|str) -> dict:
     return dict(parser.items('credentials'))
 
 
-def get_odbc_con_to_oracle_db(
-    udn: str,
-    uid: str,
-    pwd: str,
-    **kwargs
-) -> 'pyodbc.Connection':
-    import pyodbc
-    param = f"DSN={udn};UID={uid};PWD={pwd};"
-    return pyodbc.connect(param)
-
-
 def get_odbc_con_to_access_db(dbq: str) -> Connection:
     param = r"DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ={dbq};"
     engine = create_engine(f"access+pyodbc:///?odbc_connect={param}")
-    return engine.connect()
+    return engine
 
 
 def get_oracledb_con_to_oracle_db(
@@ -43,12 +32,26 @@ def get_oracledb_con_to_oracle_db(
     encoded_pwd = urllib.parse.quote(pwd, safe='')
     param = f"oracle+oracledb://{uid}:{encoded_pwd}@{host}:{port}/{dsn}"
     engine = create_engine(param)
-    return engine.connect()
+    return engine
+
+
+def get_sqlite_connection(
+    database: str,
+    **kwargs
+) -> Connection:
+    """Create SQLite connection using SQLAlchemy."""
+    param = f"sqlite:///{database}"
+    engine = create_engine(param)
+    return engine
 
 
 def get_connection_to_db(
     connector: Callable,
-    path_to_credentials: Path|str,
-):
+    path_to_credentials: Path | str,
+) -> Connection:
+    """
+    Get database connection using specified connector.
+    For SQLite, path_to_credentials can be None as credentials aren't needed.
+    """
     creds = get_db_credentials(path_to_credentials)
     return connector(**creds)
