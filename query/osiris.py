@@ -278,16 +278,30 @@ def get_values(
     return execute_query(sql, table=table, column=column, n=max_results)
 
 
+def describe_table(table: str) -> pd.DataFrame:
+    """
+    Returns descriptive statistics for a table; including column names, data types, data length, precision, number of distinct values, null count, null percentage and number of rows.
+
+    Parameters:
+    - table (str): Name of the table to analyze.
+
+    Returns
+    - pd.DataFrame: statistics about the table.
+    """
+    df = execute_query('reference/table_stats', table = table)
+    return df
+
+
 def describe_column(
     table: str,
     column: str,
     n_sample_values: int = 7
 ) -> pd.Series:
     """
-    Returns descriptive statistics and value samples for a database column; including row counts, distinct value counts, nulls, most frequent values, and a sample of actual values.
+    Returns descriptive statistics and value samples for a column; including row counts, distinct value counts, nulls, most frequent values, and a sample of actual values.
 
     Parameters:
-    - table (str): Name of the database table to analyze.
+    - table (str): Name of the table to analyze.
     - column (str): Name of the column to analyze.
     - n_sample_values (int): Maximum number of distinct values to show in sample_values. Defaults to 7.
 
