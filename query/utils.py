@@ -155,28 +155,123 @@ class Ts:
 TS = Ts()
 
 
-def export_to_excel(
-    df: pd.DataFrame,
-    fn: Path|str,
-    sheet_name: str = 'data',
-):
-    fn = Path(fn)
-    with pd.ExcelWriter(
-        fn,
-        date_format = 'DD-MM-YYYY',
-        datetime_format = 'DD-MM-YYYY',
-    ) as writer:
+class ExcelExporter:
+    """
+    Excel exporter with automatic formatting and multi-sheet support.
 
-        n_rows, n_cols = df.shape
-        idx_nlevels = df.index.nlevels
-        col_nlevels = df.columns.nlevels
+    This class handles the export of pandas DataFrames to Excel with consistent
+    formatting, including date formats, autofit columns, and autofilter.
 
-        df.to_excel(
-            writer,
-            sheet_name = sheet_name,
-            freeze_panes = (col_nlevels, idx_nlevels),
+    Parameters
+    ----------
+    date_format : str, optional
+        Format string for dates, by default 'DD-MM-YYYY'
+    datetime_format : str, optional
+        Format string for datetime values, by default 'DD-MM-YYYY'
+    """
+
+    def __init__(
+        self,
+        date_format: str = 'DD-MM-YYYY',
+        datetime_format: str = 'DD-MM-YYYY',
+    ):
+        self.date_format = date_format
+        self.datetime_format = datetime_format
+
+    def _format_sheet(
+        self,
+        sheet: object,
+        col_nlevels: int,
+        idx_offset: int,
+        n_rows: int,
+        n_cols: int,
+    ) -> None:
+        """Apply formatting to a worksheet.
+
+        Parameters
+        ----------
+        sheet : Any
+            Excel worksheet object
+        col_nlevels : int
+            Number of column levels
+        idx_offset : int
+            Number of columns to offset for index (if shown)
+        n_rows : int
+            Number of rows
+        n_cols : int
+            Number of columns
+        """
+        sheet.autofit()
+        sheet.autofilter(
+            col_nlevels - 1,
+            0,
+            n_rows,
+            idx_offset + n_cols - 1
         )
 
-        sheet = writer.sheets[sheet_name]
-        sheet.autofit()
-        sheet.autofilter(col_nlevels - 1, 0, n_rows, idx_nlevels + n_cols - 1)
+    def export_sheet(
+        self,
+        df: pd.DataFrame,
+        filepath: Path|str,
+        sheet_name: str = 'data',
+        index: bool = True,
+    ) -> None:
+        """Export a single DataFrame to Excel.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame to export
+        filepath : Path|str
+            Path to save the Excel file
+        sheet_name : str, optional
+            Name of the worksheet, by default 'data'
+        index : bool, optional
+            Whether to write index to Excel file, by default True
+        """
+        self.export_workbook({sheet_name: df}, filepath, index=index)
+
+    def export_workbook(
+        self,
+        sheet_data: dict[str, pd.DataFrame],
+        filepath: Path|str,
+        index: bool = True,
+    ) -> None:
+        """Export multiple DataFrames to a single Excel file.
+
+        Parameters
+        ----------
+        sheet_data : dict[str, pd.DataFrame]
+            Dictionary mapping sheet names to DataFrames
+        filepath : Path|str
+            Path to save the Excel file
+        index : bool, optional
+            Whether to write index to Excel file, by default True
+        """
+        filepath = Path(filepath)
+
+        with pd.ExcelWriter(
+            filepath,
+            date_format = self.date_format,
+            datetime_format = self.datetime_format,
+        ) as writer:
+            for sheet_name, df in sheet_data.items():
+                n_rows, n_cols = df.shape
+                idx_nlevels = df.index.nlevels if index else 0
+                col_nlevels = df.columns.nlevels
+
+                df.to_excel(
+                    writer,
+                    sheet_name=sheet_name,
+                    index=index,
+                    freeze_panes=(col_nlevels, idx_nlevels),
+                )
+
+                sheet = writer.sheets[sheet_name]
+                self._format_sheet(
+                    sheet,
+                    col_nlevels,
+                    idx_nlevels,
+                    n_rows,
+                    n_cols,
+                )
