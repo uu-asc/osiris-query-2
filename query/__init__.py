@@ -1,11 +1,17 @@
 import pandas as pd
 
-try:
-    import flatbread
-    import xquery
-    import key_extractor
-except ImportError:
-    ...
+import warnings
+
+from contextlib import suppress
+
+modules = ["flatbread", "xquery", "key_extractor"]
+imported = {}
+
+for module in modules:
+    with suppress(ImportError):
+        imported[module] = __import__(module)
+    if module not in imported:
+        warnings.warn(f"Optional dependency not found: {module}")
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.show_dimensions', True)
