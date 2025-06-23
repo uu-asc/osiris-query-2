@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python
+  - python=3.12
   - pip
   # sql
   - sqlalchemy
@@ -15,7 +15,6 @@ dependencies:
   # data
   - lxml
   - pandas
-  - pyarrow
   - tabulate
   # visualization
   - altair
@@ -23,6 +22,9 @@ dependencies:
   - xlrd
   - xlsxwriter
   - openpyxl
+  - pyarrow
+  - O365
+  - pdfminer.six
   # interaction
   - jupyter
   - jupyterlab
