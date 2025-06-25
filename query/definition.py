@@ -113,6 +113,7 @@ DOCSTRING: str = f"""
 """
 
 
+# region get sql
 @utils.add_keyword_defaults(CONFIG['defaults']['aggregation'])
 @utils.add_to_docstring(DOCSTRING)
 def get_sql(
@@ -242,6 +243,45 @@ def is_path(source: Path|str) -> bool:
     return True
 
 
+# region find sql
+def find_query(*keywords, how='like', **kwargs):
+    """
+    Search for queries across all configured query paths based on filename/path.
+
+    Parameters:
+    - *keywords (str): Substrings for matching query paths.
+    - how (str): One of 'like', 'regex', 'exact' for matching strategy.
+
+    Returns:
+    - dict: Dictionary with base paths as keys and lists of matching relative paths as values.
+    """
+    def matches_keyword(path_str, keyword, search_type):
+        if search_type == 'like':
+            return keyword.lower() in path_str.lower()
+        elif search_type == 'regex':
+            import re
+            return bool(re.search(keyword, path_str, re.IGNORECASE))
+        elif search_type == 'exact':
+            return keyword.lower() == path_str.lower()
+
+    matches = {}
+    query_paths = get_paths_from_config('queries')
+
+    for base_path in query_paths:
+        base_matches = []
+        for sql_file in base_path.rglob('*.sql'):
+            relative_path = sql_file.relative_to(base_path).with_suffix('')
+            relative_str = str(relative_path).replace('\\', '/')
+
+            if all(matches_keyword(relative_str, kw, how) for kw in keywords):
+                base_matches.append(relative_str)
+
+        if base_matches:
+            matches[str(base_path)] = sorted(base_matches)
+
+    return matches
+
+# region dynamic sql
 @aggspec.build_value_specs
 def wrap_sql(
     sql: str,
