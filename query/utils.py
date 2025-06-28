@@ -13,6 +13,7 @@ class DotDict(dict):
     __dir__ = dict.keys
 
 
+# region docstring
 DOCSTRING_TEMPLATE = Template(
 """$docstring
 
@@ -44,6 +45,7 @@ def add_to_docstring(*appendices: str) -> Callable:
     return decorator
 
 
+# region keywords
 def add_keyword_defaults(keywords: dict[str, Any]) -> Callable:
     """
     A decorator that adds default keyword arguments to the wrapped function.
@@ -79,6 +81,7 @@ def add_keyword_defaults(keywords: dict[str, Any]) -> Callable:
     return decorator
 
 
+# region quickfilter
 QUICK_FILTER_TEMPLATE = Template(
 """    - $column_name (str|list|None):
         Select rows where "$column_name" in given values."""
@@ -119,42 +122,7 @@ def add_quick_filter(column_name: str) -> Callable:
     return decorator
 
 
-def init_notebook_folder():
-    from pathlib import Path
-    path = Path()
-    for folder in ['queries', 'output', 'data']:
-        (path / folder).mkdir(exist_ok=True)
-
-
-class Ts:
-    @property
-    def timestamp(self):
-        return f"{self.now:%d-%m-%Y %H:%M}"
-
-    @property
-    def datum(self):
-        return f"{self.now:%d-%m-%Y}"
-
-    @property
-    def ymd(self):
-        return f"{self.now:%Y%m%d}"
-
-    @property
-    def year(self):
-        return f"{self.now:%Y}"
-
-    @property
-    def daymonth(self):
-        return f"{self.now:%d %B}"
-
-    @property
-    def now(self):
-        return pd.Timestamp.today()
-
-
-TS = Ts()
-
-
+# region excel
 class ExcelExporter:
     """
     Excel exporter with automatic formatting and multi-sheet support.
@@ -275,3 +243,40 @@ class ExcelExporter:
                     n_rows,
                     n_cols,
                 )
+
+
+# region other
+def init_notebook_folder():
+    from pathlib import Path
+    path = Path()
+    for folder in ['queries', 'output', 'data']:
+        (path / folder).mkdir(exist_ok=True)
+
+
+class Ts:
+    @property
+    def timestamp(self):
+        return f"{self.now:%d-%m-%Y %H:%M}"
+
+    @property
+    def datum(self):
+        return f"{self.now:%d-%m-%Y}"
+
+    @property
+    def ymd(self):
+        return f"{self.now:%Y%m%d}"
+
+    @property
+    def year(self):
+        return f"{self.now:%Y}"
+
+    @property
+    def daymonth(self):
+        return f"{self.now:%d %B}"
+
+    @property
+    def now(self):
+        return pd.Timestamp.today()
+
+
+TS = Ts()
