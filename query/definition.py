@@ -189,6 +189,24 @@ def get_params(
     return variables
 
 
+def get_raw_sql(
+    source: Path|str,
+    *,
+    env: Environment|None = None,
+    save_to_path: Path|str|None = None,
+    print_sql: bool = False,
+    **kwargs
+) -> str:
+    env = ENV if env is None else env
+
+    raw_sql = try_path(source, env=env)
+    if print_sql:
+        print(raw_sql)
+    if save_to_path:
+        Path(save_to_path).write_text(raw_sql)
+    return raw_sql
+
+
 def try_path(
     source: Path|str,
     *,
