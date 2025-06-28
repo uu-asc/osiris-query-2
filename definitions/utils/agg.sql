@@ -11,6 +11,7 @@ keep_na = { type = "bool", default = false }
 label_na = { type = "str", default = "<NA>" }
 totals = { type = "bool", default = false }
 grouping_sets = { type = "str|list[str]", optional = true }
+cube_totals = { type = "bool", default = false }
 label_totals = { type = "str", default = "Total" }
 */
 {#
@@ -48,6 +49,11 @@ label_totals = { type = "str", default = "Total" }
 {% set LABEL_NA = label_na | default('<NA>') %}
 {% set LABEL_VAL = label_val | default(aggfunc) %}
 {% set LABEL_TOTALS = label_totals | default("Total") %}
+{# check cube_totals and grouping_sets are not both set #}
+{% set cube_totals = cube_totals | default(false) %}
+{% if cube_totals and grouping_sets %}
+{{ raise('AGG: Cannot use both cube_totals and grouping_sets parameters') }}
+{% endif %}
 {% from 'utils/agg/macro.values.jinja' import handle_values with context %}
 {% from 'utils/agg/macro.colnames.jinja' import handle_colnames with context %}
 {# render template #}

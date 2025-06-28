@@ -107,8 +107,12 @@ DOCSTRING: str = f"""
         Default False.
     - label_na (str): Label for null/NA values. Default '{CONFIG['defaults']['aggregation']['label_na']}'.
     - totals (bool): Add totals. Default False.
+        When True, uses hierarchical totals by default.
     - grouping_sets (str | list[str]):
-        What totals to group. By default total all combinations of groups.
+        Custom grouping sets for totals. Overrides default hierarchical behavior.
+    - cube_totals (bool):
+        Use cube() for all possible combinations of totals.
+        Cannot be used with grouping_sets. Default False.
     - label_totals (str): What label to use for total rows. Default '{CONFIG['defaults']['aggregation']['label_totals']}'.
 """
 
