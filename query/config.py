@@ -42,7 +42,7 @@ def get_paths_from_config(
     key: str,
     table: str = 'paths',
     keep_shape: bool = False,
-) -> Path|list[Path]|dict[str, Path]:
+) -> Path|list[Path]|dict[str, Any]:
     """
     Retrieve paths from CONFIG based on the specified key.
 
@@ -57,23 +57,89 @@ def get_paths_from_config(
 
     If `keep_shape` is True then may also return:
     - Path: the resolved Path if input was a str.
-    - dict[str, Path]: a dictionary of resolved paths if input was dict.
+    - dict[str, Path]: a dictionary of resolved paths if input was dict (nested structure preserved).
+
+    Examples:
+    >>> # Simple string path
+    >>> get_paths_from_config('schema')  # returns [Path('./schema')]
+    >>> get_paths_from_config('schema', keep_shape=True)  # returns Path('./schema')
+
+    >>> # Dict of paths
+    >>> get_paths_from_config('output', keep_shape=True)
+    >>> # returns {'main': Path('./output'), 'temp': {'data': Path('./temp/data')}}
+
+    >>> # List of paths
+    >>> get_paths_from_config('library')  # returns [Path('/path1'), Path('/path2')]
 
     Raises:
     - TypeError: If an unexpected type is encountered while reading paths.
     """
     config = CONFIG[table][key]
+    return _resolve_config_paths(config, keep_shape)
+
+
+def get_nested_path_from_config(
+    keys: str|list[str],
+    table: str = 'paths',
+) -> Path:
+    """
+    Get a path from nested config structure.
+
+    Parameters:
+    - keys: Either 'key.subkey.subsubkey' or ['key', 'subkey', 'subsubkey']
+    - table: The table in CONFIG to search.
+
+    Returns:
+    - Path: The resolved path from the nested structure.
+
+    Examples:
+    >>> get_nested_path_from_config('output.temp.data')
+    >>> # Equivalent to: get_paths_from_config('output', keep_shape=True)['temp']['data']
+
+    >>> get_nested_path_from_config(['output', 'reports', 'daily'])
+    >>> # Same as above but with list notation
+
+    Raises:
+    - KeyError: If any key in the path doesn't exist.
+    - TypeError: If the final value is not a string/Path.
+    """
+    if isinstance(keys, str):
+        keys = keys.split('.')
+
+    config = CONFIG[table]
+    for key in keys:
+        config = config[key]
+
+    return resolve_path(config)
+
+
+def _resolve_config_paths(
+    config: str|list|dict,
+    keep_shape: bool
+) -> Path|list[Path]|dict[str, Any]:
+    """
+    Recursively resolve paths in config structure.
+
+    Parameters:
+    - config: Configuration value to resolve (string path, list, or dict).
+    - keep_shape: Whether to preserve the original structure or flatten to list.
+
+    Returns:
+    - Path|list[Path]|dict: Resolved paths maintaining structure based on keep_shape.
+
+    Raises:
+    - TypeError: If an unexpected type is encountered while resolving paths.
+    """
     match config:
         case list():
-            return [resolve_path(path) for path in config]
+            return [_resolve_config_paths(item, True) for item in config]
         case dict():
             if keep_shape:
-                return {key:resolve_path(path) for key, path in config.items()}
+                return {k: _resolve_config_paths(v, True) for k, v in config.items()}
             else:
-                return [resolve_path(path) for path in config.values()]
+                return [_resolve_config_paths(val, True) for val in config.values()]
         case str():
-            path = resolve_path(config)
-            return path if keep_shape else [path]
+            return resolve_path(config)
         case _:
             raise TypeError(f'Encountered unexpected type: {type(config)} while reading paths')
 
