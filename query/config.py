@@ -39,15 +39,17 @@ def resolve_path(path: Path|str) -> Path:
 
 
 def get_paths_from_config(
-    key: str,
+    key: str|list[str],
     table: str = 'paths',
     keep_shape: bool = False,
 ) -> Path|list[Path]|dict[str, Any]:
     """
-    Retrieve paths from CONFIG based on the specified key.
+    Retrieve paths from CONFIG based on the specified key (supports dot notation and list of keys for nested access).
 
     Parameters:
-    - key (str): The key to identify the paths in CONFIG.
+    - key (str|list[str]): The key to identify the paths in CONFIG.
+        - str: Simple key or dot notation (e.g. 'output' or 'output.werkvoorraad')
+        - list[str]: List of keys for nested access (e.g. ['output', 'werkvoorraad'])
     - table (str): The table in CONFIG to search. Default is 'paths'.
     - keep_shape (bool):
         Normally will coerce str and dict into list output. When `keep_shape` is set to True, a str will be converted to Path and a dict will be converted to a dict of Paths.
@@ -74,43 +76,21 @@ def get_paths_from_config(
     Raises:
     - TypeError: If an unexpected type is encountered while reading paths.
     """
-    config = CONFIG[table][key]
-    return _resolve_config_paths(config, keep_shape)
+    # Normalize key input to list of keys
+    if isinstance(key, str):
+        if '.' in key:
+            keys = key.split('.')
+        else:
+            keys = [key]
+    else:
+        keys = key
 
-
-def get_nested_path_from_config(
-    keys: str|list[str],
-    table: str = 'paths',
-) -> Path:
-    """
-    Get a path from nested config structure.
-
-    Parameters:
-    - keys: Either 'key.subkey.subsubkey' or ['key', 'subkey', 'subsubkey']
-    - table: The table in CONFIG to search.
-
-    Returns:
-    - Path: The resolved path from the nested structure.
-
-    Examples:
-    >>> get_nested_path_from_config('output.temp.data')
-    >>> # Equivalent to: get_paths_from_config('output', keep_shape=True)['temp']['data']
-
-    >>> get_nested_path_from_config(['output', 'reports', 'daily'])
-    >>> # Same as above but with list notation
-
-    Raises:
-    - KeyError: If any key in the path doesn't exist.
-    - TypeError: If the final value is not a string/Path.
-    """
-    if isinstance(keys, str):
-        keys = keys.split('.')
-
+    # Navigate to nested config
     config = CONFIG[table]
-    for key in keys:
-        config = config[key]
+    for k in keys:
+        config = config[k]
 
-    return resolve_path(config)
+    return _resolve_config_paths(config, keep_shape)
 
 
 def _resolve_config_paths(
@@ -132,16 +112,48 @@ def _resolve_config_paths(
     """
     match config:
         case list():
-            return [_resolve_config_paths(item, True) for item in config]
+            if keep_shape:
+                return [_resolve_config_paths(item, True) for item in config]
+            else:
+                # Flatten all items from list
+                paths = []
+                for item in config:
+                    resolved = _resolve_config_paths(item, True)
+                    paths.extend(_collect_leaf_paths(resolved))
+                return paths
         case dict():
             if keep_shape:
                 return {k: _resolve_config_paths(v, True) for k, v in config.items()}
             else:
-                return [_resolve_config_paths(val, True) for val in config.values()]
+                # Flatten all paths from nested dict structure
+                paths = []
+                for value in config.values():
+                    resolved = _resolve_config_paths(value, True)
+                    paths.extend(_collect_leaf_paths(resolved))
+                return paths
         case str():
-            return resolve_path(config)
+            path = resolve_path(config)
+            return path if keep_shape else [path]
         case _:
             raise TypeError(f'Encountered unexpected type: {type(config)} while reading paths')
+
+
+def _collect_leaf_paths(structure) -> list[Path]:
+    """Extract all Path objects from nested structure."""
+    if isinstance(structure, Path):
+        return [structure]
+    elif isinstance(structure, dict):
+        paths = []
+        for value in structure.values():
+            paths.extend(_collect_leaf_paths(value))
+        return paths
+    elif isinstance(structure, list):
+        paths = []
+        for item in structure:
+            paths.extend(_collect_leaf_paths(item))
+        return paths
+    else:
+        raise TypeError(f'Unexpected type in path structure: {type(structure)}')
 
 
 def load_config() -> dict[str, Any]:
