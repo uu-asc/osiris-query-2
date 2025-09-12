@@ -41,7 +41,7 @@ def resolve_path(path: Path|str) -> Path:
 def get_paths_from_config(
     key: str|list[str],
     table: str = 'paths',
-    flatten: bool = True,
+    flatten: bool = False,
 ) -> Path|list[Path]|dict[str, Any]:
     """
     Retrieve paths from CONFIG based on the specified key (supports dot notation and list of keys for nested access).
@@ -51,23 +51,22 @@ def get_paths_from_config(
         - str: Simple key or dot notation (e.g. 'output' or 'output.werkvoorraad')
         - list[str]: List of keys for nested access (e.g. ['output', 'werkvoorraad'])
     - table (str): The table in CONFIG to search. Default is 'paths'.
-    - flatten (bool): Whether to flatten nested structures into a single list. Default is True.
-        - True: Returns list[Path] with all paths flattened
+    - flatten (bool): Whether to flatten nested structures into a single list. Default is False.
         - False: Preserves original structure (Path for strings, dict for dicts)
+        - True: Returns list[Path] with all paths flattened
 
     Returns:
-    - list[Path]: A flattened list of all resolved Paths (when flatten=True, default).
-    - Path: Single resolved Path (when flatten=False and input is string).
+    - Path: Single resolved Path (when flatten=False and input is string, default).
     - dict[str, Path|dict]: Nested dict with resolved paths (when flatten=False and input is dict).
+    - list[Path]: A flattened list of all resolved Paths (when flatten=True).
 
     Examples:
-    >>> # Flattened output (default)
-    >>> get_paths_from_config('output')  # returns [Path1, Path2, Path3, ...]
-    >>> get_paths_from_config('output.werkvoorraad')  # returns [Path1, Path2]
+    >>> # Preserve structure (default)
+    >>> get_paths_from_config('schema')  # returns Path('./schema')
+    >>> get_paths_from_config('output')  # returns {'main': Path, 'temp': {...}}
 
-    >>> # Preserve structure
-    >>> get_paths_from_config('schema', flatten=False)  # returns Path('./schema')
-    >>> get_paths_from_config('output', flatten=False)  # returns {'main': Path, 'temp': {...}}
+    >>> # Flattened output
+    >>> get_paths_from_config('output', flatten=True)  # returns [Path1, Path2, Path3, ...]
 
     Raises:
     - TypeError: If an unexpected type is encountered while reading paths.

@@ -80,10 +80,7 @@ def execute_query(
     Raises:
     - DatabaseError: If an error occurs during the query execution.
     """
-    path_to_credentials = config.get_paths_from_config(
-        key = 'osiris',
-        table = 'credentials',
-    )
+    path_to_credentials = config.get_paths_from_config('osiris', table='credentials')
     return execution.execute_query(
         query,
         connector = connection.get_oracledb_con_to_oracle_db,
