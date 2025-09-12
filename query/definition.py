@@ -26,7 +26,7 @@ def get_template_loader(
         paths = []
     elif isinstance(paths, (Path, str)):
         paths = [paths]
-    paths = [*paths, '.', *get_paths_from_config('queries')]
+    paths = [*paths, '.', *get_paths_from_config('queries', flatten=True)]
     return FileSystemLoader(paths)
 
 
@@ -287,7 +287,7 @@ def find_query(*keywords, how='like', **kwargs):
             return keyword.lower() == path_str.lower()
 
     matches = {}
-    query_paths = get_paths_from_config('queries')
+    query_paths = get_paths_from_config('queries', flatten=True)
 
     for base_path in query_paths:
         base_matches = []

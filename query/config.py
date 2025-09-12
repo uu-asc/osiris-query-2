@@ -41,7 +41,7 @@ def resolve_path(path: Path|str) -> Path:
 def get_paths_from_config(
     key: str|list[str],
     table: str = 'paths',
-    keep_shape: bool = False,
+    flatten: bool = True,
 ) -> Path|list[Path]|dict[str, Any]:
     """
     Retrieve paths from CONFIG based on the specified key (supports dot notation and list of keys for nested access).
@@ -51,27 +51,23 @@ def get_paths_from_config(
         - str: Simple key or dot notation (e.g. 'output' or 'output.werkvoorraad')
         - list[str]: List of keys for nested access (e.g. ['output', 'werkvoorraad'])
     - table (str): The table in CONFIG to search. Default is 'paths'.
-    - keep_shape (bool):
-        Normally will coerce str and dict into list output. When `keep_shape` is set to True, a str will be converted to Path and a dict will be converted to a dict of Paths.
+    - flatten (bool): Whether to flatten nested structures into a single list. Default is True.
+        - True: Returns list[Path] with all paths flattened
+        - False: Preserves original structure (Path for strings, dict for dicts)
 
     Returns:
-    list[Path]: A list of resolved Paths (default).
-
-    If `keep_shape` is True then may also return:
-    - Path: the resolved Path if input was a str.
-    - dict[str, Path]: a dictionary of resolved paths if input was dict (nested structure preserved).
+    - list[Path]: A flattened list of all resolved Paths (when flatten=True, default).
+    - Path: Single resolved Path (when flatten=False and input is string).
+    - dict[str, Path|dict]: Nested dict with resolved paths (when flatten=False and input is dict).
 
     Examples:
-    >>> # Simple string path
-    >>> get_paths_from_config('schema')  # returns [Path('./schema')]
-    >>> get_paths_from_config('schema', keep_shape=True)  # returns Path('./schema')
+    >>> # Flattened output (default)
+    >>> get_paths_from_config('output')  # returns [Path1, Path2, Path3, ...]
+    >>> get_paths_from_config('output.werkvoorraad')  # returns [Path1, Path2]
 
-    >>> # Dict of paths
-    >>> get_paths_from_config('output', keep_shape=True)
-    >>> # returns {'main': Path('./output'), 'temp': {'data': Path('./temp/data')}}
-
-    >>> # List of paths
-    >>> get_paths_from_config('library')  # returns [Path('/path1'), Path('/path2')]
+    >>> # Preserve structure
+    >>> get_paths_from_config('schema', flatten=False)  # returns Path('./schema')
+    >>> get_paths_from_config('output', flatten=False)  # returns {'main': Path, 'temp': {...}}
 
     Raises:
     - TypeError: If an unexpected type is encountered while reading paths.
@@ -90,50 +86,52 @@ def get_paths_from_config(
     for k in keys:
         config = config[k]
 
-    return _resolve_config_paths(config, keep_shape)
+    return _resolve_config_paths(config, flatten)
 
 
 def _resolve_config_paths(
     config: str|list|dict,
-    keep_shape: bool
+    flatten: bool
 ) -> Path|list[Path]|dict[str, Any]:
     """
     Recursively resolve paths in config structure.
 
     Parameters:
     - config: Configuration value to resolve (string path, list, or dict).
-    - keep_shape: Whether to preserve the original structure or flatten to list.
+    - flatten: Whether to flatten nested structures or preserve shape.
 
     Returns:
-    - Path|list[Path]|dict: Resolved paths maintaining structure based on keep_shape.
+    - Path|list[Path]|dict: Resolved paths - flattened list or original structure.
 
     Raises:
     - TypeError: If an unexpected type is encountered while resolving paths.
     """
     match config:
         case list():
-            if keep_shape:
-                return [_resolve_config_paths(item, True) for item in config]
-            else:
-                # Flatten all items from list
+            if flatten:
+                # Flatten: collect all paths from list items
                 paths = []
                 for item in config:
-                    resolved = _resolve_config_paths(item, True)
+                    resolved = _resolve_config_paths(item, flatten=False)  # Get structured first
                     paths.extend(_collect_leaf_paths(resolved))
                 return paths
-        case dict():
-            if keep_shape:
-                return {k: _resolve_config_paths(v, True) for k, v in config.items()}
             else:
-                # Flatten all paths from nested dict structure
+                # Preserve structure: resolve each item individually
+                return [_resolve_config_paths(item, flatten=False) for item in config]
+        case dict():
+            if flatten:
+                # Flatten: collect all paths from dict values
                 paths = []
                 for value in config.values():
-                    resolved = _resolve_config_paths(value, True)
+                    resolved = _resolve_config_paths(value, flatten=False)  # Get structured first
                     paths.extend(_collect_leaf_paths(resolved))
                 return paths
+            else:
+                # Preserve structure: resolve each value, keep dict structure
+                return {k: _resolve_config_paths(v, flatten=False) for k, v in config.items()}
         case str():
             path = resolve_path(config)
-            return path if keep_shape else [path]
+            return [path] if flatten else path
         case _:
             raise TypeError(f'Encountered unexpected type: {type(config)} while reading paths')
 

@@ -83,7 +83,6 @@ def execute_query(
     path_to_credentials = config.get_paths_from_config(
         key = 'osiris',
         table = 'credentials',
-        keep_shape = True,
     )
     return execution.execute_query(
         query,
