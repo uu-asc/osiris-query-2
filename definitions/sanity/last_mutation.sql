@@ -3,6 +3,7 @@ with max_mutation_date as (
 )
 
 select
+    '{{ table }}' "table",
     max_mutation_date,
     (sysdate - max_mutation_date) / 24 n_hours,
     {{ threshold_in_hours }} threshold_in_hours,
