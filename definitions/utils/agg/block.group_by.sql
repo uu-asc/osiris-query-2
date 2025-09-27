@@ -8,12 +8,11 @@ group by
     grouping sets (
     {% for grouping_set in grouping_sets %}
         {% if grouping_set is string %}
-        ({{ grouping_set }}),
+        ({{ grouping_set }}){% if not loop.last %},{% endif %}
         {% else %}
-        ({{ grouping_set | join(', ') }}),
+        ({{ grouping_set | join(', ') }}){% if not loop.last %},{% endif %}
         {% endif %}
     {% endfor %}
-        ()
     )
 {% else %}
     {# Default hierarchical totals when totals=true #}
