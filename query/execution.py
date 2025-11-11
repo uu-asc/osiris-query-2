@@ -29,19 +29,19 @@ Database error message: ${error_message}
 
 @utils.add_to_docstring(definition.DOCSTRING)
 def execute_query(
-    query: TextClause|Path|str,
+    query: TextClause | Path | str,
     /,
     connector: Callable,
-    path_to_credentials: str|Path,
+    path_to_credentials: str | Path,
     *,
-    env: Environment|None = None,
-    parse_dates: list|dict|None = None,
-    index_col: str|list[str]|None = None,
-    dtype: str|dict|None = None,
+    env: Environment | None = None,
+    parse_dates: list | dict | None = None,
+    index_col: str | list[str] | None = None,
+    dtype: str | dict | None = None,
     dtype_backend: str = 'numpy_nullable', # numpy_nullable / pyarrow
     squeeze: bool = True,
     **kwargs
-) -> pd.DataFrame|pd.Series|None:
+) -> pd.DataFrame | pd.Series | None:
     """
     Execute a SQL query and return the result as a pandas DataFrame.
 
