@@ -54,7 +54,7 @@ Validation is performed at build time or can be done explicitly:
 from copy import deepcopy
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Self
+from typing import Any, Callable, Self, overload
 
 
 class AggFunc(str, Enum):
@@ -109,7 +109,13 @@ class AggregationBuilder:
             'distinct': False
         }
 
-    def name(self, value: str | None = None) -> str | Self:
+    @overload
+    def name(self, value: None = None) -> str | None: ...
+
+    @overload
+    def name(self, value: str) -> Self: ...
+
+    def name(self, value: str | None = None) -> str | None | Self:
         """Get or set the name for the aggregation column"""
         if value is None:
             return self._spec.get('name')
@@ -118,7 +124,13 @@ class AggregationBuilder:
         new._spec['name'] = value
         return new
 
-    def column(self, value: str | None = None) -> str | Self:
+    @overload
+    def column(self, value: None = None) -> str | None: ...
+
+    @overload
+    def column(self, value: str) -> Self: ...
+
+    def column(self, value: str | None = None) -> str | None | Self:
         """Get or set the column to aggregate"""
         if value is None:
             return self._spec.get('column')
@@ -130,11 +142,17 @@ class AggregationBuilder:
             new._spec['name'] = value
         return new
 
+    @overload
+    def case(self, condition: None = None, operator: str = 'AND') -> str | None: ...
+
+    @overload
+    def case(self, condition: str | list[str], operator: str = 'AND') -> Self: ...
+
     def case(
         self,
         condition: str | list[str] | None = None,
         operator: str = 'AND'
-    ) -> str | Self:
+    ) -> str | None | Self:
         """Get or set a CASE condition
 
         Parameters:
@@ -171,7 +189,13 @@ class AggregationBuilder:
 
         return new
 
-    def then(self, value: str|int|None = None) -> str|int|Self:
+    @overload
+    def then(self, value: None = None) -> str | int | None: ...
+
+    @overload
+    def then(self, value: str | int) -> Self: ...
+
+    def then(self, value: str|int|None = None) -> str | int | None | Self:
         """Get or set the THEN value for CASE statement"""
         if value is None:
             return self._spec.get('then')
@@ -183,7 +207,13 @@ class AggregationBuilder:
             new._spec['case'] = f"{new._spec['case'].split(' THEN')[0]} THEN {value}"
         return new
 
-    def distinct(self, value: bool|None = None) -> bool|Self:
+    @overload
+    def distinct(self, value: None = None) -> bool: ...
+
+    @overload
+    def distinct(self, value: bool) -> Self: ...
+
+    def distinct(self, value: bool | None = None) -> bool | Self:
         """Get or set whether to use DISTINCT"""
         if value is None:
             return self._spec.get('distinct', False)
