@@ -4,7 +4,7 @@ import warnings
 
 from contextlib import suppress
 
-modules = ["flatbread", "xquery", "key_extractor"]
+modules = ["flatbread", "flatbread_dataviewer", "xquery", "key_extractor"]
 imported = {}
 
 for module in modules:
