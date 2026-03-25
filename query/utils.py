@@ -1,3 +1,4 @@
+import io
 from string import Template
 from functools import wraps
 from typing import Any, BinaryIO, Callable
@@ -123,20 +124,6 @@ def add_quick_filter(column_name: str) -> Callable:
 
 
 # region excel
-import io
-from pathlib import Path
-from typing import IO
-
-import pandas as pd
-
-
-import io
-from pathlib import Path
-from typing import IO
-
-import pandas as pd
-
-
 class ExcelExporter:
     """Excel exporter with automatic formatting and multi-sheet support.
 
@@ -204,8 +191,9 @@ class ExcelExporter:
 
     def to_bytes(
         self,
-        sheet_data: dict[str, pd.DataFrame],
+        sheet_data: pd.DataFrame | dict[str, pd.DataFrame],
         index: bool = True,
+        sheet_name: str = 'data',
     ) -> bytes:
         """Export multiple DataFrames to Excel and return as bytes.
 
@@ -221,6 +209,8 @@ class ExcelExporter:
         bytes
             Excel file content as bytes
         """
+        if isinstance(sheet_data, pd.DataFrame):
+            sheet_data = {sheet_name: sheet_data}
         buf = io.BytesIO()
         self._write(sheet_data, buf, index=index)
         return buf.getvalue()
