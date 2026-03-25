@@ -130,6 +130,13 @@ from typing import IO
 import pandas as pd
 
 
+import io
+from pathlib import Path
+from typing import IO
+
+import pandas as pd
+
+
 class ExcelExporter:
     """Excel exporter with automatic formatting and multi-sheet support.
 
@@ -151,6 +158,18 @@ class ExcelExporter:
     ):
         self.date_format = date_format
         self.datetime_format = datetime_format
+
+    def _header_row_count(self, df: pd.DataFrame, index: bool) -> int:
+        """Return the number of header rows pandas writes.
+
+        When index is shown and columns are multi-level, pandas adds an extra
+        row for index names. This row should be included in the autofilter
+        range so filters sit on the correct row.
+        """
+        col_nlevels = df.columns.nlevels
+        if index and col_nlevels > 1 and any(n is not None for n in df.index.names):
+            return col_nlevels + 1
+        return col_nlevels
 
     def _format_sheet(
         self,
@@ -185,9 +204,8 @@ class ExcelExporter:
 
     def to_bytes(
         self,
-        sheet_data: pd.DataFrame | dict[str, pd.DataFrame],
+        sheet_data: dict[str, pd.DataFrame],
         index: bool = True,
-        sheet_name: str = 'data',
     ) -> bytes:
         """Export multiple DataFrames to Excel and return as bytes.
 
@@ -203,8 +221,6 @@ class ExcelExporter:
         bytes
             Excel file content as bytes
         """
-        if isinstance(sheet_data, pd.DataFrame):
-            sheet_data = {sheet_name: sheet_data}
         buf = io.BytesIO()
         self._write(sheet_data, buf, index=index)
         return buf.getvalue()
@@ -275,18 +291,18 @@ class ExcelExporter:
             for sheet_name, df in sheet_data.items():
                 n_rows, n_cols = df.shape
                 idx_nlevels = df.index.nlevels if index else 0
-                col_nlevels = df.columns.nlevels
+                header_rows = self._header_row_count(df, index)
 
                 df.to_excel(
                     writer,
                     sheet_name=sheet_name,
                     index=index,
-                    freeze_panes=(col_nlevels, idx_nlevels),
+                    freeze_panes=(header_rows, idx_nlevels),
                 )
 
                 self._format_sheet(
                     writer.sheets[sheet_name],
-                    col_nlevels,
+                    header_rows,
                     idx_nlevels,
                     n_rows,
                     n_cols,
