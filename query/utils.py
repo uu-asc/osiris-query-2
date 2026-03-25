@@ -1,6 +1,6 @@
 from string import Template
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, BinaryIO, Callable
 from pathlib import Path
 
 import pandas as pd
@@ -123,9 +123,15 @@ def add_quick_filter(column_name: str) -> Callable:
 
 
 # region excel
+import io
+from pathlib import Path
+from typing import IO
+
+import pandas as pd
+
+
 class ExcelExporter:
-    """
-    Excel exporter with automatic formatting and multi-sheet support.
+    """Excel exporter with automatic formatting and multi-sheet support.
 
     This class handles the export of pandas DataFrames to Excel with consistent
     formatting, including date formats, autofit columns, and autofilter.
@@ -174,13 +180,36 @@ class ExcelExporter:
             col_nlevels - 1,
             0,
             n_rows,
-            idx_offset + n_cols - 1
+            idx_offset + n_cols - 1,
         )
+
+    def to_bytes(
+        self,
+        sheet_data: dict[str, pd.DataFrame],
+        index: bool = True,
+    ) -> bytes:
+        """Export multiple DataFrames to Excel and return as bytes.
+
+        Parameters
+        ----------
+        sheet_data : dict[str, pd.DataFrame]
+            Dictionary mapping sheet names to DataFrames
+        index : bool, optional
+            Whether to write index to Excel file, by default True
+
+        Returns
+        -------
+        bytes
+            Excel file content as bytes
+        """
+        buf = io.BytesIO()
+        self._write(sheet_data, buf, index=index)
+        return buf.getvalue()
 
     def export_sheet(
         self,
         df: pd.DataFrame,
-        filepath: Path|str,
+        filepath: Path | str,
         sheet_name: str = 'data',
         index: bool = True,
     ) -> None:
@@ -202,7 +231,7 @@ class ExcelExporter:
     def export_workbook(
         self,
         sheet_data: dict[str, pd.DataFrame],
-        filepath: Path|str,
+        filepath: Path | str,
         index: bool = True,
     ) -> None:
         """Export multiple DataFrames to a single Excel file.
@@ -216,12 +245,29 @@ class ExcelExporter:
         index : bool, optional
             Whether to write index to Excel file, by default True
         """
-        filepath = Path(filepath)
+        self._write(sheet_data, Path(filepath), index=index)
 
+    def _write(
+        self,
+        sheet_data: dict[str, pd.DataFrame],
+        destination: Path | BinaryIO,
+        index: bool = True,
+    ) -> None:
+        """Write sheet data to a file path or file-like object.
+
+        Parameters
+        ----------
+        destination : Path | BinaryIO
+            File path or file-like object to write to
+        sheet_data : dict[str, pd.DataFrame]
+            Dictionary mapping sheet names to DataFrames
+        index : bool, optional
+            Whether to write index to Excel file, by default True
+        """
         with pd.ExcelWriter(
-            filepath,
-            date_format = self.date_format,
-            datetime_format = self.datetime_format,
+            destination,
+            date_format=self.date_format,
+            datetime_format=self.datetime_format,
         ) as writer:
             for sheet_name, df in sheet_data.items():
                 n_rows, n_cols = df.shape
@@ -235,9 +281,8 @@ class ExcelExporter:
                     freeze_panes=(col_nlevels, idx_nlevels),
                 )
 
-                sheet = writer.sheets[sheet_name]
                 self._format_sheet(
-                    sheet,
+                    writer.sheets[sheet_name],
                     col_nlevels,
                     idx_nlevels,
                     n_rows,
