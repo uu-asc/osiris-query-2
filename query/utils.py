@@ -185,8 +185,9 @@ class ExcelExporter:
 
     def to_bytes(
         self,
-        sheet_data: dict[str, pd.DataFrame],
+        sheet_data: pd.DataFrame | dict[str, pd.DataFrame],
         index: bool = True,
+        sheet_name: str = 'data',
     ) -> bytes:
         """Export multiple DataFrames to Excel and return as bytes.
 
@@ -202,6 +203,8 @@ class ExcelExporter:
         bytes
             Excel file content as bytes
         """
+        if isinstance(sheet_data, pd.DataFrame):
+            sheet_data = {sheet_name: sheet_data}
         buf = io.BytesIO()
         self._write(sheet_data, buf, index=index)
         return buf.getvalue()
