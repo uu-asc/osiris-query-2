@@ -4,6 +4,9 @@ import warnings
 
 from contextlib import suppress
 
+from query.connections import osiris, isis, sap, csa
+
+
 modules = ["flatbread", "flatbread_dataviewer", "xquery", "key_extractor"]
 imported = {}
 

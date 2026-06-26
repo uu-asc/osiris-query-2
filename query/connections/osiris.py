@@ -29,7 +29,8 @@ from string import Template
 import pandas as pd
 from sqlalchemy import TextClause
 
-from query import config, connection, definition, execution, utils
+from query import config, definition, execution, utils
+from query.connections import connection
 from query.definition import get_sql, get_raw_sql, get_params, find_query
 from query.aggspec import *
 
@@ -46,14 +47,14 @@ quickfilter_docstrings = ['    QUICK FILTERS', *[
 @utils.add_quick_filter('sinh_id')
 @utils.add_quick_filter('io_aanvr_id')
 def execute_query(
-    query: TextClause|Path|str,
-    parse_dates: list|dict|None = None,
-    index_col: str|list[str]|None = None,
-    dtype: str|dict|None = None,
-    dtype_backend: str|None = None,
+    query: TextClause | Path | str,
+    parse_dates: list | dict | None = None,
+    index_col: str | list[str] | None = None,
+    dtype: str | dict | None = None,
+    dtype_backend: str | None = None,
     squeeze: bool = True,
     **kwargs
-) -> pd.DataFrame|pd.Series|None:
+) -> pd.DataFrame | pd.Series | None:
     """
     Execute a SQL query and return the result as a pandas DataFrame.
 
@@ -103,7 +104,7 @@ SEARCH_STRINGS = {
 
 def find_table(
     *args: str,
-    where: list|str|None = None,
+    where: list | str | None = None,
     how: str = 'like',
     **kwargs
 ) -> pd.DataFrame:
@@ -139,9 +140,9 @@ def find_table(
 
 def find_column(
     *args: str,
-    table: str|None = None,
-    data_type: str|None = None,
-    where: list|None = None,
+    table: str | None = None,
+    data_type: str | None = None,
+    where: list | None = None,
     how: str = 'like',
     how_data_type: str = 'like',
     how_table: str = 'exact',
@@ -194,7 +195,7 @@ def find_column(
 def get_table(
     table: str,
     **kwargs
-) -> pd.DataFrame|None:
+) -> pd.DataFrame | None:
     """
     Fetch all results from `table`.
 
@@ -215,7 +216,7 @@ def peek(
     table: str,
     n: int = 7,
     **kwargs
-) -> pd.DataFrame|None:
+) -> pd.DataFrame | None:
     """
     Peek at first `n` results from `table`.
 
@@ -238,7 +239,7 @@ def peek(
 def get_values(
     table: str,
     column: str,
-    max_results: int|None = 50
+    max_results: int | None = 50
 ) -> pd.Series:
     """
     Retrieve unique values from a specified column in a database table.

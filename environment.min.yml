@@ -8,7 +8,9 @@ dependencies:
   # sql
   - sqlalchemy
   - oracledb
+  - pymssql
   - python-duckdb
+  - duckdb-engine
   - sqlparse
   # scheduling
   - schedule

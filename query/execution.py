@@ -8,7 +8,8 @@ from sqlalchemy import TextClause
 from sqlalchemy.exc import DatabaseError
 from pandas.errors import DatabaseError as PandasDatabaseError
 
-from query import connection, definition, utils
+from query import definition, utils
+from query.connections import connection
 from query.definition import get_sql, get_params
 
 

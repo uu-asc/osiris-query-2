@@ -5,6 +5,7 @@ from pathlib import Path
 import urllib
 
 from sqlalchemy import create_engine, Connection
+import duckdb
 
 
 def get_db_credentials(path: Path | str) -> dict:
@@ -35,6 +36,20 @@ def get_oracledb_con_to_oracle_db(
     return engine
 
 
+def get_pymssql_con_to_msserver_db(
+    uid: str,
+    pwd: str,
+    host: str,
+    port: str,
+    database: str,
+    **kwargs
+) -> Connection:
+    encoded_pwd = urllib.parse.quote(pwd, safe='')
+    param = f"mssql+pymssql://{uid}:{encoded_pwd}@{host}:{port}/{database}"
+    engine = create_engine(param)
+    return engine
+
+
 def get_sqlite_connection(
     database: str,
     **kwargs
@@ -42,6 +57,11 @@ def get_sqlite_connection(
     """Create SQLite connection using SQLAlchemy."""
     param = f"sqlite:///{database}"
     engine = create_engine(param)
+    return engine
+
+
+def get_duckdb_connection(database: str, **kwargs):
+    engine = create_engine(f"duckdb:///{database}")
     return engine
 
 
