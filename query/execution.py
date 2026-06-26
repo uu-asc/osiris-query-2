@@ -6,6 +6,7 @@ import pandas as pd
 from jinja2 import Environment
 from sqlalchemy import TextClause
 from sqlalchemy.exc import DatabaseError
+from pandas.errors import DatabaseError as PandasDatabaseError
 
 from query import connection, definition, utils
 from query.definition import get_sql, get_params
@@ -98,10 +99,16 @@ def execute_query(
             return df.squeeze().rename(query_name)
         return df
 
-    except DatabaseError as e:
+    except (DatabaseError, PandasDatabaseError) as e:
         params = get_params(query)
         missing = [k for k in params if k not in kwargs]
-        info = str(e.orig)
+        orig = getattr(e, 'orig', None)
+
+        # needed to get info from pandas error wrapper
+        if orig is None and e.__cause__:
+            orig = getattr(e.__cause__, 'orig', e.__cause__)
+        info = str(orig or e)
+        
         error_statement = ERROR_TEMPLATE.substitute(
             sql = sql.text,
             query_name = query_name,
