@@ -5,7 +5,7 @@ from pathlib import Path
 import urllib
 
 from sqlalchemy import create_engine, Connection
-import duckdb
+from sqlalchemy.pool import NullPool
 
 
 def get_db_credentials(path: Path | str) -> dict:
@@ -74,4 +74,6 @@ def get_connection_to_db(
     For SQLite, path_to_credentials can be None as credentials aren't needed.
     """
     creds = get_db_credentials(path_to_credentials)
-    return connector(**creds)
+    engine = connector(**creds)
+    engine.pool = NullPool(engine.pool._creator)
+    return engine
