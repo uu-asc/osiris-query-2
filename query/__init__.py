@@ -1,8 +1,8 @@
-import pandas as pd
-
 import warnings
-
 from contextlib import suppress
+
+import pandas as pd
+from sqlparse.engine import grouping
 
 from query.connections import osiris, isis, sap, csa
 
@@ -18,3 +18,5 @@ for module in modules:
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.show_dimensions', True)
+
+grouping.MAX_GROUPING_TOKENS = None
