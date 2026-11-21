@@ -11,3 +11,4 @@ scripts/*
 !scripts/
 !*/.gitkeep
 config/config.toml
+local-paths.pth
