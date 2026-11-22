@@ -5,15 +5,13 @@ from dataclasses import dataclass, field, fields, MISSING
 from pathlib import Path
 from typing import Any, Callable, Self, TYPE_CHECKING
 
+from query.errors import ConfigError  # defined in errors; kept importable from here
+
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
 
 LIBPATH: Path = Path(__file__).resolve().parent.parent
-
-
-class ConfigError(Exception):
-    """Invalid or incomplete configuration."""
 
 
 def absolute_path(path: Path|str) -> Path:

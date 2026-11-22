@@ -1,0 +1,28 @@
+{#
+code(rows): numbered lines. rows: list of {gutter, html (Markup), error}.
+Lines are joined with '\n' inside one <pre>, so copying gives plain lines;
+the gutter has user-select: none.
+#}
+{% macro code(rows) -%}
+<pre class="code">
+{%- for r in rows -%}
+<span class="line{{ ' errline' if r.error }}"><span class="lineno">{{ r.gutter }}</span>{{ r.html }}</span>{{ '\n' if not loop.last }}
+{%- endfor -%}
+</pre>
+{%- endmacro %}
+
+{#
+params(passed, not_passed, unused): passed is a list of (name, shortened value).
+not_passed and unused are left out when None or empty.
+#}
+{% macro params(passed, not_passed, unused) -%}
+<div class="params">
+<span class="label">passed</span><span>{% for name, value in passed %}{{ name }}={{ value }}{{ ', ' if not loop.last }}{% else %}(none){% endfor %}</span>
+{% if not_passed %}
+<span class="label">not passed</span><span>{{ not_passed | join(', ') }}</span>
+{% endif %}
+{% if unused %}
+<span class="label">unused</span><span class="unused">{{ unused | join(', ') }}</span>
+{% endif %}
+</div>
+{%- endmacro %}

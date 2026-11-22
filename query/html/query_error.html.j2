@@ -1,0 +1,17 @@
+{#
+QueryError. Extra context: passed, position ((line, column) or None),
+context (rows around the position), full (all rows).
+#}
+{% extends 'base.html.j2' %}
+{% from 'macros.html.j2' import code, params %}
+{% block body %}
+{{ params(passed, e.not_passed, e.unused) }}
+{% if position %}
+<div class="position">line {{ position[0] }}, column {{ position[1] }} <span class="muted">(where the database stopped parsing; the mistake can be earlier)</span></div>
+{{ code(context) }}
+{% endif %}
+<details>
+<summary>full SQL ({{ full | length }} lines)</summary>
+{{ code(full) }}
+</details>
+{% endblock %}

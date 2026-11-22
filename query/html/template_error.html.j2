@@ -1,0 +1,12 @@
+{#
+TemplateError. Extra context: context (rows around e.lineno; empty when there
+is no source or line).
+#}
+{% extends 'base.html.j2' %}
+{% from 'macros.html.j2' import code %}
+{% block body %}
+{% if context %}
+<div class="position">line {{ e.lineno }}</div>
+{{ code(context) }}
+{% endif %}
+{% endblock %}

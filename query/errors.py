@@ -13,13 +13,25 @@ Driver details are read by duck typing where the errors are created.
 - ConnectError: connecting failed; no SQL was sent.
 - TemplateError: rendering the template failed; nothing was sent.
 
-The error objects hold data only. The text rendering (`__str__`) is built
-from the fields with the helpers below.
+The error objects hold data only. Both renderings are built from the fields:
+- text (`__str__`): logs, stderr, and the traceback IPython shows when the
+  error is raised (`_render_traceback_`).
+- HTML (`_repr_html_`, via `_repr_mimebundle_`): notebooks. Jinja templates
+  and a stylesheet in `query/html/`; SQL highlighted with pygments when it is
+  installed. jinja2, markupsafe, pygments and IPython are imported only when
+  needed, so this module imports without them.
+
+`report(error)` shows an error: rich display under IPython, text on stderr
+otherwise.
 """
 
+import functools
+import re
 import reprlib
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 
@@ -161,9 +173,200 @@ def _param_lines(
     return out
 
 
+# region html
+HTML_DIR = Path(__file__).parent / 'html'
+
+# First match wins: Comment.Preproc (Jinja delimiters) before Comment.
+_TOKEN_CLASSES = (
+    ('Comment.Preproc', 'tok-t'),
+    ('Comment', 'tok-c'),
+    ('Literal.String', 'tok-s'),
+    ('Literal.Number', 'tok-n'),
+    ('Keyword', 'tok-k'),
+    ('Operator', 'tok-o'),
+    ('Name.Builtin', 'tok-b'),
+    ('Name.Variable', 'tok-v'),
+)
+
+_URL = re.compile(r'https?://[^\s<>"\']+')
+_PLAIN_TOKENS = re.compile(r'\w+|\s+|\S')
+
+
+@functools.cache
+def _html_env() -> Any:
+    """Jinja environment for the HTML renderings; autoescaping on."""
+    from jinja2 import Environment, FileSystemLoader
+    from markupsafe import Markup
+    env = Environment(
+        loader=FileSystemLoader(HTML_DIR),
+        autoescape=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+    env.filters['linkify'] = _linkify
+    env.globals['css'] = Markup((HTML_DIR / 'error.css').read_text(encoding='utf-8'))
+    return env
+
+
+def _render_html(template: str, **context: Any) -> str:
+    return _html_env().get_template(template).render(**context)
+
+
+def _linkify(text: str) -> Any:
+    """Escape `text`; turn http(s) URLs into links."""
+    from markupsafe import Markup, escape
+    parts = []
+    last = 0
+    for match in _URL.finditer(text):
+        url = match.group().rstrip('.,;:)')
+        parts.append(escape(text[last:match.start()]))
+        parts.append(Markup('<a href="{0}" target="_blank" rel="noopener noreferrer">{0}</a>').format(url))
+        last = match.start() + len(url)
+    parts.append(escape(text[last:]))
+    return Markup('').join(parts)
+
+
+@functools.cache
+def _token_classes() -> tuple[tuple[Any, str], ...]:
+    from pygments import token
+    def resolve(path: str) -> Any:
+        ttype = token.Token
+        for part in path.split('.'):
+            ttype = getattr(ttype, part)
+        return ttype
+    return tuple((resolve(path), cls) for path, cls in _TOKEN_CLASSES)
+
+
+def _token_class(ttype: Any) -> str:
+    for parent, cls in _token_classes():
+        if ttype in parent:
+            return cls
+    return ''
+
+
+Segments = list[tuple[str, str]]     # (css class, text) per token, one line
+
+
+def _segments(text: str, lexer: str) -> list[Segments]:
+    """
+    Highlighted `text`, one list of (css class, text) per line, split as
+    `_lines` splits. Plain text (class '') if pygments is not installed or its
+    output doesn't line up with `_lines`.
+    """
+    expected = _lines(text)
+    lines: list[Segments] | None = None
+    try:
+        from pygments.lexers import get_lexer_by_name
+    except ImportError:
+        pass
+    else:
+        lines = [[]]
+        tokens = get_lexer_by_name(lexer, stripnl=False, ensurenl=False).get_tokens(text)
+        for ttype, value in tokens:
+            cls = _token_class(ttype)
+            for i, part in enumerate(value.split('\n')):
+                if i:
+                    lines.append([])
+                if part:
+                    lines[-1].append((cls, part))
+    aligned = (
+        lines is not None
+        and len(lines) == len(expected)
+        and all(''.join(t for _, t in segs) == line for segs, line in zip(lines, expected))
+    )
+    if not aligned:
+        # Unhighlighted, but split into words, spaces and symbols, so the
+        # underline at the error position still covers one token.
+        return [[('', part) for part in _PLAIN_TOKENS.findall(line)] for line in expected]
+    return lines
+
+
+def _mark_range(segments: Segments, column: int) -> tuple[int, int]:
+    """
+    Character range on the line to underline: from `column` (1-based) to the
+    end of the token there. On whitespace, the next token is included.
+    """
+    start = column - 1
+    pos = 0
+    for i, (_, text) in enumerate(segments):
+        if pos <= start < pos + len(text):
+            end = pos + len(text)
+            if not text[start - pos:].strip() and i + 1 < len(segments):
+                end += len(segments[i + 1][1])
+            return start, end
+        pos += len(text)
+    return start, start          # past the end of the line
+
+
+def _line_html(segments: Segments, mark: tuple[int, int] | None = None) -> Any:
+    """One line as HTML: escaped token text in classed spans, `mark` underlined."""
+    from markupsafe import Markup, escape
+
+    def piece(cls: str, text: str, marked: bool) -> Any:
+        html = escape(text)
+        if marked:
+            html = Markup('<span class="mark">{}</span>').format(html)
+        return Markup('<span class="{}">{}</span>').format(cls, html) if cls else html
+
+    out = []
+    pos = 0
+    for cls, text in segments:
+        if mark is None:
+            out.append(piece(cls, text, False))
+        else:
+            a = min(max(mark[0] - pos, 0), len(text))
+            b = min(max(mark[1] - pos, 0), len(text))
+            for part, marked in ((text[:a], False), (text[a:b], True), (text[b:], False)):
+                if part:
+                    out.append(piece(cls, part, marked))
+        pos += len(text)
+    if mark is not None and mark[0] >= pos:
+        out.append(Markup('<span class="mark"> </span>'))
+    return Markup('').join(out)
+
+
+def _html_rows(
+    lines: list[Segments],
+    numbers: range | list[int],
+    error_line: int | None = None,
+    column: int | None = None,
+) -> list[dict[str, Any]]:
+    """Rows for the `code` macro: gutter text, line HTML, error flag."""
+    width = len(str(len(lines)))
+    rows = []
+    for n in numbers:
+        is_error = n == error_line
+        mark = _mark_range(lines[n - 1], column) if is_error and column is not None else None
+        rows.append({
+            'gutter': f"{n:>{width}} │ ",
+            'html': _line_html(lines[n - 1], mark),
+            'error': is_error,
+        })
+    return rows
+
+
+class _Displayable:
+    """Display hooks shared by the reported errors (not ConfigError)."""
+
+    def _repr_html_(self) -> str:
+        raise NotImplementedError
+
+    def _repr_mimebundle_(self, include: Any = None, exclude: Any = None) -> dict[str, str]:
+        bundle = {'text/plain': str(self)}
+        try:
+            bundle['text/html'] = self._repr_html_()
+        except Exception:       # a broken HTML rendering must not hide the error
+            pass
+        return bundle
+
+    def _render_traceback_(self) -> list[str]:
+        """Used by IPython instead of the traceback when the error is raised."""
+        return [*str(self).splitlines(), '', '(HTML view: <connection module>.last_error)']
+
+
 # region errors
 @dataclass(eq=False)
-class QueryError(OsirisQueryError):
+class QueryError(_Displayable, OsirisQueryError):
     """
     The database received the SQL and rejected it, or failed executing it.
 
@@ -179,6 +382,7 @@ class QueryError(OsirisQueryError):
       None if there is no template (TextClause).
     - unused: Passed, but neither a template variable nor a library keyword.
       None if there is no template.
+    - path: Full path of the query file; None for inline SQL.
     - raised_at: When the error occurred.
     - offset: Derived. Character offset in `sql` where the database stopped
       parsing; None if unknown or not meaningful (see `caret_offset`).
@@ -192,6 +396,7 @@ class QueryError(OsirisQueryError):
     passed: dict[str, Any] = field(default_factory=dict)
     not_passed: list[str] | None = None
     unused: list[str] | None = None
+    path: str | None = None
     raised_at: datetime = field(default_factory=datetime.now)
     offset: int | None = field(init=False, default=None)
 
@@ -210,8 +415,10 @@ class QueryError(OsirisQueryError):
         return f"QueryError({self.code!r}, query={self.query_name!r})"
 
     def __str__(self) -> str:
-        out = [
-            f"QueryError [{self.connection}] {self.query_name}  ({_timestamp(self.raised_at)})",
+        out = [f"QueryError [{self.connection}] {self.query_name}  ({_timestamp(self.raised_at)})"]
+        if self.path:
+            out.append(self.path)
+        out += [
             self.db_message,
             '',
             *_param_lines(self.passed, self.not_passed, self.unused),
@@ -232,9 +439,30 @@ class QueryError(OsirisQueryError):
         out.extend(_numbered(_all_rows(self.sql, error_line), width))
         return '\n'.join(out)
 
+    def _repr_html_(self) -> str:
+        lines = _segments(self.sql, 'sql')
+        position = self.position
+        line, column = position if position else (None, None)
+        context = []
+        if line is not None:
+            numbers = [n for n, _, _ in _context(self.sql, line)]
+            context = _html_rows(lines, numbers, line, column)
+        return _render_html(
+            'query_error.html.j2',
+            e=self,
+            kind='QueryError',
+            title=[self.connection, self.query_name],
+            raised_at=_timestamp(self.raised_at),
+            message=self.db_message,
+            passed=[(k, _short(v)) for k, v in self.passed.items()],
+            position=position,
+            context=context,
+            full=_html_rows(lines, range(1, len(lines) + 1), line, column),
+        )
+
 
 @dataclass(eq=False)
-class ConnectError(OsirisQueryError):
+class ConnectError(_Displayable, OsirisQueryError):
     """
     Connecting to the database failed. No SQL was sent.
 
@@ -261,9 +489,19 @@ class ConnectError(OsirisQueryError):
             self.db_message,
         ])
 
+    def _repr_html_(self) -> str:
+        return _render_html(
+            'base.html.j2',
+            e=self,
+            kind='ConnectError',
+            title=[self.connection],
+            raised_at=_timestamp(self.raised_at),
+            message=self.db_message,
+        )
+
 
 @dataclass(eq=False)
-class TemplateError(OsirisQueryError):
+class TemplateError(_Displayable, OsirisQueryError):
     """
     Rendering the template failed. Nothing was sent to the database.
 
@@ -275,6 +513,7 @@ class TemplateError(OsirisQueryError):
     - source: Source of `template`; None when context lines would not help
       (e.g. the `raise()` helper in library templates).
     - lineno: Line in `source`, 1-based; None if unknown.
+    - path: Full path of `template`; None for inline SQL.
     - raised_at: When the error occurred.
     """
     query_name: str
@@ -282,6 +521,7 @@ class TemplateError(OsirisQueryError):
     message: str
     source: str | None = None
     lineno: int | None = None
+    path: str | None = None
     raised_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self) -> None:
@@ -293,11 +533,18 @@ class TemplateError(OsirisQueryError):
             f"template={self.template!r}, lineno={self.lineno!r})"
         )
 
+    def _title(self) -> list[str]:
+        title = [self.query_name]
+        if self.template != self.query_name:
+            title.append(f"in {self.template}")
+        return title
+
     def __str__(self) -> str:
-        header = f"TemplateError {self.query_name}  ({_timestamp(self.raised_at)})"
-        out = [header]
+        out = [f"TemplateError {self.query_name}  ({_timestamp(self.raised_at)})"]
         if self.template != self.query_name:
             out.append(f"in {self.template}")
+        if self.path:
+            out.append(self.path)
         out.append(self.message)
         if self.source is not None and self.lineno is not None:
             width = len(str(len(_lines(self.source))))
@@ -305,6 +552,41 @@ class TemplateError(OsirisQueryError):
             out.append(f"line {self.lineno}")
             out.extend(_numbered(_context(self.source, self.lineno), width))
         return '\n'.join(out)
+
+    def _repr_html_(self) -> str:
+        context = []
+        if self.source is not None and self.lineno is not None:
+            lines = _segments(self.source, 'sql+jinja')
+            numbers = [n for n, _, _ in _context(self.source, self.lineno)]
+            context = _html_rows(lines, numbers, self.lineno)
+        return _render_html(
+            'template_error.html.j2',
+            e=self,
+            kind='TemplateError',
+            title=self._title(),
+            raised_at=_timestamp(self.raised_at),
+            message=self.message,
+            context=context,
+        )
+
+
+# region reporting
+def report(error: OsirisQueryError) -> None:
+    """
+    Show `error`: rich display under IPython (HTML in notebooks, text in a
+    terminal IPython), text on stderr otherwise.
+    """
+    shell = None
+    try:
+        from IPython import get_ipython
+        shell = get_ipython()
+    except ImportError:
+        pass
+    if shell is not None:
+        from IPython.display import display
+        display(error)
+    else:
+        print(error, file=sys.stderr)
 
 
 # region last error

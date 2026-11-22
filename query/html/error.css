@@ -1,0 +1,80 @@
+/*
+Error display (query/errors.py). Embedded as a style block in each output.
+Everything is nested under .oq2-error so nothing reaches the rest of the page.
+Colours come from JupyterLab's theme variables; the fallbacks (VS Code, other
+frontends) are mid-tones that read on light and dark backgrounds.
+Some rules reset JupyterLab's own styling of pre and code in HTML output.
+*/
+.oq2-error {
+  --oq2-red: var(--jp-error-color1, #d32f2f);
+
+  border-left: 3px solid var(--oq2-red);
+  margin: 4px 0;
+  padding: 2px 0 2px 10px;
+  font-family: var(--jp-code-font-family, monospace);
+  font-size: var(--jp-code-font-size, 13px);
+  line-height: 1.4;
+
+  .header {
+    .time { margin-left: 2ch; opacity: .65; }
+  }
+
+  .path code {
+    padding: 0;
+    background: none;
+    font: inherit;
+    opacity: .8;
+    user-select: all;      /* one click selects the whole path */
+  }
+
+  .msg {
+    margin: 4px 0;
+    color: var(--oq2-red);
+    white-space: pre-wrap;
+    a { color: inherit; text-decoration: underline; }
+  }
+
+  .params {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 2ch;
+    margin: 6px 0;
+    .label  { opacity: .65; }
+    .unused { color: var(--oq2-red); }
+  }
+
+  .position {
+    margin: 6px 0 2px;
+    .muted { opacity: .65; }
+  }
+
+  pre.code {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    tab-size: 4;
+    overflow-x: auto;
+
+    .lineno  { user-select: none; opacity: .5; }
+    .errline { display: inline-block; min-width: 100%; background: rgba(211, 47, 47, .12); }
+    .mark    { text-decoration: underline wavy var(--oq2-red); text-decoration-skip-ink: none; }
+  }
+
+  details {
+    margin-top: 6px;
+    summary { cursor: pointer; opacity: .8; }
+  }
+
+  .tok-k { color: var(--jp-mirror-editor-keyword-color, #7c4dff); }
+  .tok-s { color: var(--jp-mirror-editor-string-color, #c0392b); }
+  .tok-n { color: var(--jp-mirror-editor-number-color, #2e8b57); }
+  .tok-c { color: var(--jp-mirror-editor-comment-color, #8a8a8a); font-style: italic; }
+  .tok-o { color: var(--jp-mirror-editor-operator-color, #7c4dff); }
+  .tok-b { color: var(--jp-mirror-editor-builtin-color, #2e8b57); }
+  .tok-v { color: var(--jp-mirror-editor-variable-2-color, #1e88e5); }
+  .tok-t { color: var(--jp-mirror-editor-meta-color, #9c27b0); }
+}
