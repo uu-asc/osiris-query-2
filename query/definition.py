@@ -88,6 +88,21 @@ UTIL_KEYWORDS: list[str] = [
     'aggfunc',
     'values',
 ]
+# Keywords used by the aggregation templates (utils/agg.sql). Together with
+# UTIL_KEYWORDS: every keyword the library templates consume. Kept explicit;
+# a test checks the templates against both lists.
+AGG_KEYWORDS: list[str] = [
+    'distinct',
+    'columns',
+    'having',
+    'label_val',
+    'keep_na',
+    'label_na',
+    'totals',
+    'grouping_sets',
+    'cube_totals',
+    'label_totals',
+]
 DOCSTRING: str = f"""
     Optional keywords:
 
@@ -142,7 +157,7 @@ DOCSTRING: str = f"""
 @utils.add_keyword_defaults(CONFIG['defaults']['aggregation'])
 @utils.add_to_docstring(DOCSTRING)
 def get_sql(
-    source: Path|str,
+    source: 'Path|str|QuerySource',
     *,
     env: Environment|None = None,
     save_to_path: Path|str|None = None,
@@ -154,7 +169,8 @@ def get_sql(
     Retrieves a SQL query template from file or string, renders it with Jinja2, and returns a TextClause.
 
     Parameters:
-    - source (Path|str): Path to file or string containing the SQL query.
+    - source (Path|str|QuerySource): Path to file or string containing the
+        SQL query, or an already loaded query (passed through unchanged).
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
     - save_to_path (Path|str|None): Path to save rendered query.
@@ -204,7 +220,7 @@ def get_sql(
 
 
 def get_params(
-    source: Path|str,
+    source: 'Path|str|QuerySource',
     *,
     env: Environment|None = None,
 ) -> set[str]:
@@ -261,16 +277,19 @@ class QuerySource:
 
 
 def load_query(
-    source: Path|str,
+    source: Path|str|QuerySource,
     *,
     env: Environment|None = None,
 ) -> QuerySource:
     """
     Load `source`: a query file if `source` looks like a path (see `is_path`),
     otherwise the string itself. A '.sql' suffix is added to paths without it.
+    A QuerySource is returned unchanged, so a query loaded once can be passed
+    on (e.g. from `execute_query` to `get_sql`) without reading it again.
 
     Parameters:
-    - source (Path|str): Path to file or string containing the SQL query.
+    - source (Path|str|QuerySource): Path to file or string containing the
+        SQL query, or an already loaded query.
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
 
@@ -280,6 +299,8 @@ def load_query(
     Raises:
     - QueryNotFound: `source` looks like a path and the file is not found.
     """
+    if isinstance(source, QuerySource):
+        return source
     if not is_path(source):
         return QuerySource(text=source, name=DEFAULT_QUERY_NAME, path=None)
     env = ENV if env is None else env

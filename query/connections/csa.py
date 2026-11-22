@@ -18,6 +18,10 @@ from query.aggspec import *
 
 SETTINGS = connection.DuckdbSettings.from_config('csa')
 
+# last_error: most recent error for this connection (see errors.last_error)
+__getattr__ = connection.module_getattr(__name__, SETTINGS)
+__dir__ = connection.module_dir(__name__)
+
 
 def execute_query(
     query: TextClause | Path | str,

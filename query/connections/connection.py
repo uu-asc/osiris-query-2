@@ -18,12 +18,14 @@ to `create_engine(connect_args=...)` and from there to the driver's
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+import sys
 import urllib
 
 from sqlalchemy import create_engine, Engine
 from sqlalchemy.pool import NullPool
 
+from query import errors
 from query.config import (
     ConnectionSettings,
     setting,
@@ -34,6 +36,30 @@ from query.config import (
     parse_credentials_file,
     read_credentials,
 )
+
+
+# region module attributes
+def module_getattr(module_name: str, settings: ConnectionSettings) -> Callable[[str], Any]:
+    """
+    Module-level `__getattr__` (PEP 562) for a connection module. Serves
+    `last_error`: the most recent error for `settings.name`, looked up on
+    each access, so errors stored after import are seen.
+
+    Usage, in the connection module:
+        __getattr__ = connection.module_getattr(__name__, SETTINGS)
+    """
+    def __getattr__(name: str) -> Any:
+        if name == 'last_error':
+            return errors.last_error(settings.name)
+        raise AttributeError(f"module {module_name!r} has no attribute {name!r}")
+    return __getattr__
+
+
+def module_dir(module_name: str) -> Callable[[], list[str]]:
+    """Module-level __dir__: the module's own names plus `last_error`."""
+    def __dir__() -> list[str]:
+        return sorted({*vars(sys.modules[module_name]), 'last_error'})
+    return __dir__
 
 
 # region connectors

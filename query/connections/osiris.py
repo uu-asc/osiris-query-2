@@ -36,6 +36,10 @@ from query.aggspec import *
 
 SETTINGS = connection.OracleSettings.from_config('osiris')
 
+# last_error: most recent error for this connection (see errors.last_error)
+__getattr__ = connection.module_getattr(__name__, SETTINGS)
+__dir__ = connection.module_dir(__name__)
+
 
 quickfilter_docstrings = ['    QUICK FILTERS', *[
     utils.QUICK_FILTER_TEMPLATE.substitute(column_name = column_name)
