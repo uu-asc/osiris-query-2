@@ -1,10 +1,31 @@
+import importlib
 import warnings
 from contextlib import suppress
+from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from sqlparse.engine import grouping
 
-from query.connections import osiris, isis, sap, csa
+if TYPE_CHECKING:
+    from query.connections import osiris, isis, sap, csa
+
+
+# Connection modules are imported on first access (PEP 562), so that
+# `from query import osiris` only loads (and validates config for) osiris.
+_CONNECTIONS = ('osiris', 'isis', 'sap', 'csa')
+
+
+def __getattr__(name: str) -> ModuleType:
+    if name in _CONNECTIONS:
+        module = importlib.import_module(f'query.connections.{name}')
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_CONNECTIONS})
 
 
 modules = ["flatbread", "flatbread_dataviewer", "xquery", "key_extractor"]
