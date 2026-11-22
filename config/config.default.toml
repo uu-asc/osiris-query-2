@@ -1,9 +1,7 @@
 [paths]
-schema = "./schema"
 queries = "./definitions"
 templates = "./templates"
 output = "."
-tasks = "."
 library = []
 
 [credentials]

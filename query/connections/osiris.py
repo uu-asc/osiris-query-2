@@ -34,8 +34,6 @@ from query.connections import connection
 from query.definition import get_sql, get_raw_sql, get_params, find_query
 from query.aggspec import *
 
-SCHEMA = config.load_schema('osiris')
-
 
 quickfilter_docstrings = ['    QUICK FILTERS', *[
     utils.QUICK_FILTER_TEMPLATE.substitute(column_name = column_name)

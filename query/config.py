@@ -1,4 +1,3 @@
-import json
 import sys
 import tomllib
 from pathlib import Path
@@ -62,7 +61,7 @@ def get_paths_from_config(
 
     Examples:
     >>> # Preserve structure (default)
-    >>> get_paths_from_config('schema')  # returns Path('./schema')
+    >>> get_paths_from_config('queries')  # returns Path('./definitions')
     >>> get_paths_from_config('output')  # returns {'main': Path, 'temp': {...}}
 
     >>> # Flattened output
@@ -190,24 +189,3 @@ def add_library_to_sys_path() -> None:
 
 CONFIG = load_config()
 # add_library_to_sys_path()
-
-
-def load_schema(schema: str) -> dict[str, Any]:
-    """
-    Load a JSON schema file based on the provided schema name.
-
-    Parameters:
-    - schema (str): The name of the JSON schema file (without extension).
-
-    Returns:
-    dict[str, Any]: A dictionary containing the loaded schema data.
-
-    This function takes the name of a JSON schema file, resolves its path using the configured schema directory, and loads the content of the schema file. The loaded schema data is returned as a dictionary.
-    """
-    schema_path = resolve_path(CONFIG['paths']['schema'])
-    schema_file = (schema_path / schema).with_suffix('.json')
-
-    with open(schema_file) as f:
-        schema_data = json.load(f)
-
-    return schema_data
