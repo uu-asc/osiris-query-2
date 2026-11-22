@@ -11,10 +11,12 @@ from string import Template
 import pandas as pd
 from sqlalchemy import TextClause
 
-from query import config, execution
+from query import execution
 from query.connections import connection
 from query.definition import get_sql, get_raw_sql, get_params, find_query
 from query.aggspec import *
+
+SETTINGS = connection.MssqlSettings.from_config('sap')
 
 
 def execute_query(
@@ -52,11 +54,9 @@ def execute_query(
     Raises:
     - DatabaseError: If an error occurs during the query execution.
     """
-    path_to_credentials = config.get_paths_from_config('sap', table='credentials')
     return execution.execute_query(
         query,
-        connector = connection.get_pymssql_con_to_msserver_db,
-        path_to_credentials = path_to_credentials,
+        settings = SETTINGS,
         parse_dates = parse_dates,
         index_col = index_col,
         dtype = dtype,

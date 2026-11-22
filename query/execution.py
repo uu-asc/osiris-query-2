@@ -1,6 +1,5 @@
 from pathlib import Path
 from string import Template
-from typing import Callable
 
 import pandas as pd
 from jinja2 import Environment
@@ -9,7 +8,7 @@ from sqlalchemy.exc import DatabaseError
 from pandas.errors import DatabaseError as PandasDatabaseError
 
 from query import definition, utils
-from query.connections import connection
+from query.config import ConnectionSettings
 from query.definition import get_sql, get_params
 
 
@@ -33,8 +32,7 @@ Database error message: ${error_message}
 def execute_query(
     query: TextClause | Path | str,
     /,
-    connector: Callable,
-    path_to_credentials: str | Path,
+    settings: ConnectionSettings,
     *,
     env: Environment | None = None,
     parse_dates: list | dict | None = None,
@@ -50,10 +48,8 @@ def execute_query(
     Parameters:
     - query (TextClause | Path | str):
         SQL query definition, file path, or raw SQL string.
-    - connector (Callable):
-        A callable object that establishes a connection to the database.
-    - path_to_credentials (str | Path):
-        Path to the credentials file or a string containing credentials.
+    - settings (ConnectionSettings):
+        Validated connection settings; `settings.engine()` creates the engine.
     - env (Environment | None, optional):
         Environment context for the query execution. Default is None.
     - parse_dates (list | dict | None, optional):
@@ -80,7 +76,7 @@ def execute_query(
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
     query_name = query if definition.is_path(query) else DEFAULT_QUERY_NAME
     sql = definition.get_sql(query, env=env, **kwargs)
-    con = connection.get_connection_to_db(connector, path_to_credentials)
+    con = settings.engine()
     if index_col is None:
         index_col = kwargs.get('columns')
     elif index_col == False:

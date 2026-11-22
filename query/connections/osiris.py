@@ -29,10 +29,12 @@ from string import Template
 import pandas as pd
 from sqlalchemy import TextClause
 
-from query import config, definition, execution, utils
+from query import definition, execution, utils
 from query.connections import connection
 from query.definition import get_sql, get_raw_sql, get_params, find_query
 from query.aggspec import *
+
+SETTINGS = connection.OracleSettings.from_config('osiris')
 
 
 quickfilter_docstrings = ['    QUICK FILTERS', *[
@@ -79,11 +81,9 @@ def execute_query(
     Raises:
     - DatabaseError: If an error occurs during the query execution.
     """
-    path_to_credentials = config.get_paths_from_config('osiris', table='credentials')
     return execution.execute_query(
         query,
-        connector = connection.get_oracledb_con_to_oracle_db,
-        path_to_credentials = path_to_credentials,
+        settings = SETTINGS,
         parse_dates = parse_dates,
         index_col = index_col,
         dtype = dtype,
@@ -324,7 +324,6 @@ def describe_column(
     return s
 
 
-@utils.add_keyword_defaults(config.CONFIG['sanity']['osiris'])
 def sanity(
     mutation_date_column: str = 'mutatie_datum',
     table: str = 'ost_student_inschrijfhist',

@@ -4,18 +4,40 @@ templates = "./templates"
 output = "."
 library = []
 
-[credentials]
-db1 = "~/credentials/db1.ini"
-
 [defaults]
 
 [defaults.aggregation]
 label_totals = "Total"
 label_na = "<NA>"
 
-[sanity]
+# One section per connection. Importing a connection module (e.g.
+# `from query import osiris`) validates its section and reports all problems
+# at once. Relative paths resolve against the repository root.
+#
+# Credentials files hold uid and pwd (other keys are ignored):
+#   [credentials]
+#   uid = ...
+#   pwd = ...
+#
+# Optional driver options per connection, passed to the driver's connect():
+#   [connections.<name>.connect_args]
+#   read_only = true
 
-[sanity.osiris]
-table = "table"
-mutation_date_column = "mutation_date_column"
-threshold_in_hours = 1
+[connections.osiris]
+host = "host"
+port = 1521
+dsn = "dsn"
+credentials = "~/credentials/osiris.ini"
+arraysize = 10_000  # rows per network round trip (driver default: 100)
+
+[connections.sap]
+host = "host"
+port = 1433
+database = "database"
+credentials = "~/credentials/sap.ini"
+
+[connections.isis]
+database = "~/data/isis.duckdb"
+
+[connections.csa]
+database = "~/data/csa.duckdb"

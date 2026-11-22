@@ -1,10 +1,27 @@
 import sys
 import tomllib
+from configparser import ConfigParser, Error as ConfigParserError
+from dataclasses import dataclass, field, fields, MISSING
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Self, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 
 LIBPATH: Path = Path(__file__).resolve().parent.parent
+
+
+class ConfigError(Exception):
+    """Invalid or incomplete configuration."""
+
+
+def absolute_path(path: Path|str) -> Path:
+    """Expand `~` and resolve relative paths against LIBPATH. Does not check existence."""
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = (LIBPATH / path).resolve()
+    return path
 
 
 def resolve_path(path: Path|str) -> Path:
@@ -30,9 +47,7 @@ def resolve_path(path: Path|str) -> Path:
     Raises:
     - AssertionError: If the resolved path does not exist.
     """
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = (LIBPATH / path).resolve()
+    path = absolute_path(path)
     assert path.exists(), f"Config: '{path}' does not exist"
     return path
 
@@ -152,30 +167,38 @@ def _collect_leaf_paths(structure) -> list[Path]:
         raise TypeError(f'Unexpected type in path structure: {type(structure)}')
 
 
-def load_config() -> dict[str, Any]:
+def get_config_file() -> Path:
     """
-    Load configuration data from the 'config.toml' file in the 'config' directory.
+    Return the config file to load: 'config/config.toml', or
+    'config/config.default.toml' if the former does not exist.
+    """
+    config_dir = LIBPATH / 'config'
+    config_file = config_dir / 'config.toml'
+    if not config_file.exists():
+        config_file = config_dir / 'config.default.toml'
+    return config_file
 
-    If 'config.toml' is not found, it falls back to 'config.default.toml'.
+
+def load_config(config_file: Path) -> dict[str, Any]:
+    """
+    Load configuration data from `config_file` (TOML).
 
     Returns:
     dict[str, Any]: A dictionary containing the loaded configuration.
 
-    The function reads the configuration from a TOML file located in the 'config' directory. It first attempts to read 'config.toml' and, if not found, falls back to 'config.default.toml'. The configuration is returned as a dictionary.
+    Raises:
+    - ConfigError: If the file is not valid TOML. The message names the file
+      and the position of the error.
 
     Example:
-    >>> load_config()
+    >>> load_config(get_config_file())
     {'key1': 'value1', 'key2': 'value2', ...}
     """
-    config_dir = LIBPATH / 'config'
-    config_file = config_dir / 'config.toml'
-
-    if not config_file.exists():
-        config_file = config_dir / 'config.default.toml'
-
     with open(config_file, 'rb') as f:
-        config = tomllib.load(f)
-
+        try:
+            config = tomllib.load(f)
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigError(f"cannot parse {config_file}: {e}") from None
     return config
 
 
@@ -187,5 +210,178 @@ def add_library_to_sys_path() -> None:
         sys.path.append(paths)
 
 
-CONFIG = load_config()
+CONFIG_FILE: Path = get_config_file()
+CONFIG: dict[str, Any] = load_config(CONFIG_FILE)
 # add_library_to_sys_path()
+
+
+# region connection settings
+def setting(
+    parse: Callable[[Any], Any],
+    expected: str,
+    **kwargs: Any,
+) -> Any:
+    """
+    Declare a field of a `ConnectionSettings` subclass that is read from config.
+
+    Parameters:
+    - parse (Callable): Receives the raw config value; returns the parsed
+      value or raises ValueError with a message describing the problem.
+    - expected (str): Short description of a valid value, shown when a
+      required key is missing (e.g. 'positive int').
+    - **kwargs: Passed to `dataclasses.field`. Give `default` or
+      `default_factory` to make the key optional; without either it is required.
+
+    Fields declared without `setting(...)` (such as `name`) are not read
+    from config.
+    """
+    return field(metadata={'parse': parse, 'expected': expected}, **kwargs)
+
+
+def parse_str(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"expected non-empty string, got {value!r}")
+    return value
+
+
+def parse_port(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 < value < 65536:
+        raise ValueError(f"expected port number (int), got {value!r}")
+    return value
+
+
+def parse_positive_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"expected positive int, got {value!r}")
+    return value
+
+
+def parse_table(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"expected table, got {value!r}")
+    return value
+
+
+def parse_existing_file(value: Any) -> Path:
+    """Path string; `~` expanded, relative paths resolved against LIBPATH; file must exist."""
+    path = absolute_path(parse_str(value))
+    if not path.is_file():
+        raise ValueError(f"file not found: {path}")
+    return path
+
+
+CREDENTIALS_KEYS = {'uid', 'pwd'}
+
+
+def read_credentials(path: Path) -> dict[str, str]:
+    """
+    Read the [credentials] section from an ini file.
+
+    Only uid and pwd are used by the connectors. Other keys in the section
+    are ignored (they are not passed to the connection).
+    """
+    parser = ConfigParser()
+    with path.open() as f:
+        parser.read_file(f)
+    return dict(parser.items('credentials'))
+
+
+def parse_credentials_file(value: Any) -> Path:
+    """
+    Path to an existing ini file with a [credentials] section containing
+    uid and pwd. Other keys are allowed and ignored.
+
+    Only the path is kept; the file is read again when connecting, so the
+    password is not stored on the settings object.
+    """
+    path = parse_existing_file(value)
+    try:
+        creds = read_credentials(path)
+    except ConfigParserError as e:
+        raise ValueError(f"{path}: {e.message.splitlines()[0]}") from None
+    missing = sorted(CREDENTIALS_KEYS - creds.keys())
+    if missing:
+        raise ValueError(f"{path}: {', '.join(missing)} missing")
+    return path
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConnectionSettings:
+    """
+    Validated settings for one connection, read from [connections.<name>].
+
+    Subclasses (one per driver, see query.connections.connection) declare
+    their fields with `setting(...)` and implement `engine()`. Each database
+    module creates its settings at import, e.g.
+    `SETTINGS = OracleSettings.from_config('osiris')`.
+
+    Validation (`from_config`) reports all problems in the section at once:
+    missing required keys, values that fail to parse, and unknown keys (to
+    catch typos).
+
+    Fields shared by all drivers:
+    - name (str): The section name, e.g. 'osiris'. Not a config key.
+    - connect_args (table, optional): Driver options passed unchanged to
+      `create_engine(connect_args=...)` and from there to the driver's
+      `connect()`. Contents are not validated here, since they depend on the
+      driver; a wrong option shows up as a driver error on first connect.
+      Example:
+
+          [connections.isis.connect_args]
+          read_only = true
+    """
+    name: str
+    connect_args: dict[str, Any] = setting(parse_table, 'table', default_factory=dict)
+
+    @classmethod
+    def from_config(
+        cls,
+        name: str,
+        config: dict[str, Any] | None = None,
+    ) -> Self:
+        """
+        Build settings from [connections.<name>] in `config` (default: CONFIG).
+
+        Raises:
+        - ConfigError: listing every problem found in the section.
+        """
+        config = CONFIG if config is None else config
+        section = config.get('connections', {}).get(name)
+        header = f"[connections.{name}] ({CONFIG_FILE})"
+        if section is None:
+            raise ConfigError(f"missing section {header}")
+        if not isinstance(section, dict):
+            raise ConfigError(f"{header} must be a table")
+
+        values, problems = cls._parse(section)
+        if problems:
+            lines = '\n'.join(f"  - {problem}" for problem in problems)
+            raise ConfigError(f"problems in {header}:\n{lines}")
+        return cls(name=name, **values)
+
+    @classmethod
+    def _parse(cls, section: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Parse all fields; collect problems instead of stopping at the first."""
+        values: dict[str, Any] = {}
+        problems: list[str] = []
+        known: set[str] = set()
+        for f in fields(cls):
+            if 'parse' not in f.metadata:
+                continue
+            known.add(f.name)
+            if f.name not in section:
+                required = f.default is MISSING and f.default_factory is MISSING
+                if required:
+                    problems.append(f"{f.name}: missing ({f.metadata['expected']})")
+                continue
+            try:
+                values[f.name] = f.metadata['parse'](section[f.name])
+            except ValueError as e:
+                problems.append(f"{f.name}: {e}")
+        for key in sorted(section.keys() - known):
+            problems.append(f"{key}: unknown key")
+        return values, problems
+
+    def engine(self) -> 'Engine':
+        """Create a SQLAlchemy engine for this connection."""
+        raise NotImplementedError
