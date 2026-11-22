@@ -1,0 +1,12 @@
+{#
+QueryNotFound: where the loader looked, and close matches.
+#}
+{% extends 'base.html.j2' %}
+{% block body %}
+<div class="params">
+<span class="label">searched</span><span>{{ e.searched | join(', ') or '(none)' }}</span>
+{% if e.suggestions %}
+<span class="label">did you mean</span><span>{{ e.suggestions | join(', ') }}</span>
+{% endif %}
+</div>
+{% endblock %}

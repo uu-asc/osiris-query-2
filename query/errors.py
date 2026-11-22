@@ -11,7 +11,10 @@ Driver details are read by duck typing where the errors are created.
 - QueryError: the database received the SQL and rejected it, or failed
   executing it.
 - ConnectError: connecting failed; no SQL was sent.
-- TemplateError: rendering the template failed; nothing was sent.
+- TemplateError: rendering the user's template failed; nothing was sent.
+- QueryNotFound: the query file was not found.
+- KeywordError: library keywords (where, values, totals, ...) were passed in
+  an invalid way; nothing was sent.
 
 The error objects hold data only. Both renderings are built from the fields:
 - text (`__str__`): logs, stderr, and the traceback IPython shows when the
@@ -361,7 +364,9 @@ class _Displayable:
 
     def _render_traceback_(self) -> list[str]:
         """Used by IPython instead of the traceback when the error is raised."""
-        return [*str(self).splitlines(), '', '(HTML view: <connection module>.last_error)']
+        connection = getattr(self, 'connection', None)
+        where = f"{connection}.last_error" if connection else 'sys.last_value'
+        return [*str(self).splitlines(), '', f"(HTML view: {where})"]
 
 
 # region errors
@@ -371,7 +376,7 @@ class QueryError(_Displayable, OsirisQueryError):
     The database received the SQL and rejected it, or failed executing it.
 
     Fields:
-    - query_name: Query path, or '<n/a>' for inline SQL.
+    - query_name: Query path, or '<inline>' for inline SQL.
     - connection: Connection name (settings.name).
     - sql: The statement as the driver received it.
     - code: Driver error code, e.g. 'ORA-00904'; None if unknown.
@@ -506,12 +511,13 @@ class TemplateError(_Displayable, OsirisQueryError):
     Rendering the template failed. Nothing was sent to the database.
 
     Fields:
-    - query_name: Query path, or '<n/a>' for inline SQL.
-    - template: Template in which the error occurred: the query itself, an
-      included file, or '<string>' for inline SQL.
+    - query_name: Query path, or '<inline>' for inline SQL.
+    - template: Template in which the error occurred: the query itself
+      (equal to `query_name`, so '<inline>' for inline SQL) or an included
+      file (name relative to its search path).
     - message: What went wrong.
     - source: Source of `template`; None when context lines would not help
-      (e.g. the `raise()` helper in library templates).
+      (e.g. the `raise()` helper).
     - lineno: Line in `source`, 1-based; None if unknown.
     - path: Full path of `template`; None for inline SQL.
     - raised_at: When the error occurred.
@@ -567,6 +573,94 @@ class TemplateError(_Displayable, OsirisQueryError):
             raised_at=_timestamp(self.raised_at),
             message=self.message,
             context=context,
+        )
+
+
+@dataclass(eq=False)
+class QueryNotFound(_Displayable, OsirisQueryError):
+    """
+    The query file was not found.
+
+    Fields:
+    - query_name: Query path as passed.
+    - searched: Search paths of the template loader, in order.
+    - suggestions: Close matches among the queries found there; may be empty.
+    - raised_at: When the error occurred.
+    """
+    query_name: str
+    searched: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
+    raised_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self) -> None:
+        super().__init__(f"query not found: {self.query_name}")
+
+    def __repr__(self) -> str:
+        return f"QueryNotFound(query={self.query_name!r})"
+
+    def __str__(self) -> str:
+        out = [
+            f"QueryNotFound {self.query_name}  ({_timestamp(self.raised_at)})",
+            '',
+            f"searched      {', '.join(self.searched) or '(none)'}",
+        ]
+        if self.suggestions:
+            out.append(f"did you mean  {', '.join(self.suggestions)}")
+        return '\n'.join(out)
+
+    def _repr_html_(self) -> str:
+        return _render_html(
+            'query_not_found.html.j2',
+            e=self,
+            kind='QueryNotFound',
+            title=[self.query_name],
+            raised_at=_timestamp(self.raised_at),
+            message='query not found',
+        )
+
+
+@dataclass(eq=False)
+class KeywordError(_Displayable, OsirisQueryError):
+    """
+    Library keywords (where, select, values, totals, ...) were passed in an
+    invalid way. Raised from the library templates and aggspec; nothing was
+    sent to the database.
+
+    Fields:
+    - query_name: Query path, or '<inline>' for inline SQL.
+    - keyword: The keyword involved, if known (e.g. 'values').
+    - message: What went wrong.
+    - raised_at: When the error occurred.
+    """
+    query_name: str
+    keyword: str | None
+    message: str
+    raised_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self) -> None:
+        super().__init__(self.message)
+
+    def __repr__(self) -> str:
+        return f"KeywordError(query={self.query_name!r}, keyword={self.keyword!r})"
+
+    def __str__(self) -> str:
+        out = [f"KeywordError {self.query_name}  ({_timestamp(self.raised_at)})"]
+        if self.keyword:
+            out.append(f"keyword: {self.keyword}")
+        out.append(self.message)
+        return '\n'.join(out)
+
+    def _repr_html_(self) -> str:
+        title = [self.query_name]
+        if self.keyword:
+            title.append(f"keyword {self.keyword}")
+        return _render_html(
+            'base.html.j2',
+            e=self,
+            kind='KeywordError',
+            title=title,
+            raised_at=_timestamp(self.raised_at),
+            message=self.message,
         )
 
 

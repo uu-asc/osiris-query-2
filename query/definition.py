@@ -1,7 +1,18 @@
+import difflib
+from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
 from typing import TypeAlias
 
-from jinja2 import Environment, BaseLoader, FileSystemLoader, meta
+from jinja2 import (
+    BaseLoader,
+    Environment,
+    FileSystemLoader,
+    TemplateError as JinjaTemplateError,
+    TemplateNotFound,
+    TemplateSyntaxError,
+    meta,
+)
 from sqlalchemy import text, TextClause
 
 import sqlparse
@@ -11,9 +22,19 @@ from sqlparse.tokens import CTE, DML
 from query import utils
 from query import aggspec
 from query.config import CONFIG, get_paths_from_config
+from query.errors import KeywordError, QueryNotFound, TemplateError
 
 
 SqlString: TypeAlias = str
+
+DEFAULT_QUERY_NAME = '<inline>'
+
+
+class TemplateRaise(Exception):
+    """
+    Raised by the `raise()` helper in templates. Internal: `get_sql` converts
+    it to KeywordError (library templates) or TemplateError (the user's own).
+    """
 
 
 TextClause.__repr__ = lambda self: self.text
@@ -39,7 +60,7 @@ def get_environment(
 
     def raise_helper(msg):
         # https://stackoverflow.com/a/29262304/10403856
-        raise ValueError(msg)
+        raise TemplateRaise(msg)
 
     def format_string(text: str, fmt: str, *args):
         return fmt.format(text, *args)
@@ -143,21 +164,34 @@ def get_sql(
 
     Returns:
     TextClause: The processed SQL query as a SQLAlchemy TextClause.
+
+    Raises:
+    - QueryNotFound: `source` looks like a path and the file is not found.
+    - TemplateError: Rendering the query (or a file it includes) failed.
+    - KeywordError: Library keywords (where, values, ...) are invalid.
     """
     if isinstance(source, TextClause):
         return source
     env = ENV if env is None else env
-    source = try_path(source, env=env)
+    query = load_query(source, env=env)
 
     if print_vars:
-        variables = get_params(source, env=env)
+        variables = get_params(query.text, env=env)
         print(variables)
 
-    template = env.from_string(source)
-    rendered = template.render(**kwargs)
+    try:
+        template = env.from_string(query.text)
+        rendered = template.render(**kwargs)
+    except Exception as e:
+        raise _template_error(e, query, env) from e
 
     if any(kwd in kwargs for kwd in UTIL_KEYWORDS):
-        rendered = wrap_sql(rendered, **kwargs)
+        try:
+            rendered = wrap_sql(rendered, env=env, **kwargs)
+        except Exception as e:
+            # Wrong keyword arguments are by far the most likely cause, so
+            # everything is reported as KeywordError; the cause is chained.
+            raise _keyword_error(e, query) from e
 
     sql = TextClause(rendered)
 
@@ -211,6 +245,55 @@ def get_raw_sql(
     return raw_sql
 
 
+@dataclass(frozen=True)
+class QuerySource:
+    """
+    A query as loaded: from a file, or the string as passed.
+
+    Fields:
+    - text: SQL/Jinja source: file contents, or the string as passed.
+    - name: As passed ('matching/eindstatus'), or '<inline>' for inline SQL.
+    - path: Resolved file path; None for inline SQL.
+    """
+    text: str
+    name: str
+    path: str | None
+
+
+def load_query(
+    source: Path|str,
+    *,
+    env: Environment|None = None,
+) -> QuerySource:
+    """
+    Load `source`: a query file if `source` looks like a path (see `is_path`),
+    otherwise the string itself. A '.sql' suffix is added to paths without it.
+
+    Parameters:
+    - source (Path|str): Path to file or string containing the SQL query.
+    - env (Environment|None):
+        Jinja2 environment. If not provided, the default environment is used.
+
+    Returns:
+    QuerySource: Text, name and path of the query.
+
+    Raises:
+    - QueryNotFound: `source` looks like a path and the file is not found.
+    """
+    if not is_path(source):
+        return QuerySource(text=source, name=DEFAULT_QUERY_NAME, path=None)
+    env = ENV if env is None else env
+    path = Path(source)
+    if path.suffix != '.sql':
+        path = path.with_suffix(path.suffix + '.sql')
+    try:
+        text, filename, _ = env.loader.get_source(env, path.as_posix())
+    except TemplateNotFound:
+        raise _query_not_found(str(source), env) from None
+    filename = str(Path(filename).resolve()) if filename else None
+    return QuerySource(text=text, name=str(source), path=filename)
+
+
 def try_path(
     source: Path|str,
     *,
@@ -219,7 +302,7 @@ def try_path(
     """
     Test if `source` is path and if so load query statement from it. Else do nothing.
 
-    If `source` seems to be a path then it is tested if it has a '.sql' suffix. If not then it will be added to the path.
+    Kept for backwards compatibility; see `load_query`.
 
     Parameters:
     - source (Path|str): Path to file or string containing the SQL query.
@@ -229,13 +312,7 @@ def try_path(
     Returns:
     SqlString: A string representing a sql query.
     """
-    if is_path(source):
-        env = ENV if env is None else env
-        path = Path(source)
-        if path.suffix != '.sql':
-            path = path.with_suffix(path.suffix + '.sql')
-        source, *_ = env.loader.get_source(None, path.as_posix())
-    return source
+    return load_query(source, env=env).text
 
 
 def is_path(source: Path|str) -> bool:
@@ -263,6 +340,112 @@ def is_path(source: Path|str) -> bool:
     if source.lower().startswith('select '):
         return False
     return True
+
+
+# region errors
+def _searchpaths(env: Environment) -> list[Path]:
+    """Search paths of the loader, resolved; empty for loaders without them."""
+    paths = getattr(env.loader, 'searchpath', None) or []
+    return [Path(p).resolve() for p in paths]
+
+
+def _query_not_found(name: str, env: Environment) -> QueryNotFound:
+    searched = _searchpaths(env)
+    # The current directory is searched, but not scanned for suggestions: in
+    # a notebook it can be any (large) folder.
+    cwd = Path.cwd().resolve()
+    known = set()
+    for base in searched:
+        if base == cwd or not base.is_dir():
+            continue
+        for file in base.rglob('*.sql'):
+            known.add(file.relative_to(base).with_suffix('').as_posix())
+    wanted = name.replace('\\', '/').removesuffix('.sql')
+    return QueryNotFound(
+        query_name=name,
+        searched=[str(p) for p in searched],
+        suggestions=difflib.get_close_matches(wanted, sorted(known), n=3),
+    )
+
+
+def _message(e: Exception) -> str:
+    """Message of `e`: Jinja's own message, otherwise 'TypeName: message'."""
+    if isinstance(e, TemplateRaise):
+        return str(e)
+    if isinstance(e, TemplateNotFound):
+        return f"included template not found: {e.name}"
+    if isinstance(e, JinjaTemplateError):
+        return e.message or str(e)
+    return f"{type(e).__name__}: {e}"
+
+
+def _last_template_frame(tb: TracebackType | None) -> tuple[str | None, int | None]:
+    """
+    (filename, lineno) of the innermost template frame in `tb`; (None, None)
+    if there is none.
+
+    Jinja rewrites tracebacks so templates appear as frames with the
+    template's file and line; templates rendered with `from_string` appear as
+    '<template>'. The rewritten frames are recognised by the
+    `__jinja_exception__` global Jinja gives them (jinja2.debug). Not by
+    filename: with '.' as a search path, any Python file under the current
+    directory would look like a template.
+    """
+    found: tuple[str | None, int | None] = (None, None)
+    while tb is not None:
+        if '__jinja_exception__' in tb.tb_frame.f_globals:
+            found = (tb.tb_frame.f_code.co_filename, tb.tb_lineno)
+        tb = tb.tb_next
+    return found
+
+
+def _relative_name(filename: str, searched: list[Path]) -> str | None:
+    """`filename` relative to the first search path it lies under, or None."""
+    path = Path(filename).resolve()
+    for base in searched:
+        if path.is_relative_to(base):
+            return path.relative_to(base).as_posix()
+    return None
+
+
+def _template_error(e: Exception, query: QuerySource, env: Environment) -> TemplateError:
+    """
+    TemplateError for an exception raised while rendering `query`. The
+    template and line come from the exception (syntax errors) or from the
+    traceback (other errors). '<template>' or no filename means the query
+    itself.
+    """
+    message = _message(e)
+    if isinstance(e, TemplateRaise):
+        return TemplateError(query.name, template=query.name, message=message, path=query.path)
+
+    if isinstance(e, TemplateSyntaxError):
+        filename, lineno = e.filename, e.lineno
+    else:
+        filename, lineno = _last_template_frame(e.__traceback__)
+
+    if filename in (None, '<template>'):
+        return TemplateError(
+            query.name, template=query.name, message=message,
+            source=query.text, lineno=lineno, path=query.path,
+        )
+
+    name = _relative_name(filename, _searchpaths(env)) or filename
+    try:
+        source, *_ = env.loader.get_source(env, name)
+    except Exception:           # context lines are optional; never hide the error
+        source = None
+    return TemplateError(
+        query.name, template=name, message=message,
+        source=source, lineno=lineno, path=str(Path(filename).resolve()),
+    )
+
+
+def _keyword_error(e: Exception, query: QuerySource) -> KeywordError:
+    """KeywordError for an exception raised in `wrap_sql` (or aggspec)."""
+    if isinstance(e, aggspec.ValidationError):
+        return KeywordError(query.name, keyword='values', message=str(e))
+    return KeywordError(query.name, keyword=None, message=_message(e))
 
 
 # region find sql
