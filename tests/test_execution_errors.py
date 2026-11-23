@@ -1,25 +1,31 @@
+import inspect
+import sqlite3
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pandas as pd
 from jinja2 import meta
-from pandas.errors import DatabaseError as PandasDatabaseError
-from sqlalchemy.exc import DatabaseError, InterfaceError, OperationalError, ResourceClosedError
 
-from query import errors, execution
+from query import definition, errors, execution
 from query.connections.connection import module_getattr
 from query.definition import (
     AGG_KEYWORDS,
     ENV,
+    EXECUTION_KEYWORDS,
     UTIL_KEYWORDS,
     get_environment,
     get_sql,
 )
 from query.errors import ConnectError, QueryError, QueryNotFound, TemplateError
+from query.execution import DriverError
+from tests.fake_sqlite import FakeSettings, rows
 
 SETTINGS = SimpleNamespace(name='testdb', engine=lambda: object())
+# Table t doesn't exist: on the sqlite fake this query fails with a QueryError.
 QUERY = 'select\n  collegejaar\nfrom t\nwhere collegejaar = {{ collegejaar }}\n{% if opleiding %}and opleiding = 1{% endif %}\n'
 
 
@@ -29,22 +35,8 @@ class DriverException(Exception):
         super().__init__(SimpleNamespace(full_code=full_code, message=message, offset=offset))
 
 
-def sql_error(statement: str) -> PandasDatabaseError:
-    """An SQL error as read_sql_query raises it: pandas wraps SQLAlchemy wraps the driver."""
-    orig = DriverException('ORA-00904', 'ORA-00904: "COLEGEJAAR": invalid identifier', offset=7)
-    sa = DatabaseError(statement, {}, orig)
-    wrapper = PandasDatabaseError(f"Execution failed on sql: {sa}")
-    wrapper.__cause__ = sa
-    return wrapper
-
-
-def connect_error() -> OperationalError:
-    """A connect error: not wrapped by pandas, statement None."""
-    orig = DriverException('DPY-6005', 'DPY-6005: cannot connect to database', offset=0)
-    return OperationalError(None, None, orig)
-
-
-class ExecutionErrorTest(unittest.TestCase):
+class ExecutionTest(unittest.TestCase):
+    """execute_query over the sqlite fake (tests/fake_sqlite.py)."""
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -52,78 +44,70 @@ class ExecutionErrorTest(unittest.TestCase):
         (self.root / 'q.sql').write_text(QUERY, encoding='utf-8')
         (self.root / 'broken.sql').write_text('select {{ x.y }}', encoding='utf-8')
         self.env = get_environment(paths=self.root)
+        self.settings = FakeSettings()
         errors._last_errors.clear()
         self.addCleanup(errors._last_errors.clear)
         patcher = mock.patch.object(errors, 'report')
         self.report = patcher.start()
         self.addCleanup(patcher.stop)
 
-    def run_failing(self, exc: BaseException, query='q', **kwargs):
-        def fail(sql, *args, **kw):
-            raise exc
-        with mock.patch.object(execution.pd, 'read_sql_query', fail):
-            return execution.execute_query(query, settings=SETTINGS, env=self.env, **kwargs)
+    def run_query(self, query='q', settings=None, **kwargs):
+        return execution.execute_query(
+            query, settings=settings or self.settings, env=self.env, **kwargs
+        )
 
 
-class QueryErrorTest(ExecutionErrorTest):
-    def test_sql_error_is_reported_and_stored(self) -> None:
-        statement = 'select\n  collegejaar\nfrom t'
-        with mock.patch.object(execution, '_exact_offset', return_value=7) as exact:
-            result = self.run_failing(sql_error(statement), collegejaar=2024, colegejaar=2024)
-        exact.assert_called_once_with(SETTINGS, statement, 'ORA-00904')
+class QueryErrorTest(ExecutionTest):
+    def test_query_error_is_reported_and_stored(self) -> None:
+        result = self.run_query(collegejaar=2024, colegejaar=2024)
         self.assertIsNone(result)
-        err = errors.last_error('testdb')
+        err = errors.last_error('fake')
         self.assertIsInstance(err, QueryError)
         self.report.assert_called_once_with(err)
         self.assertEqual(err.query_name, 'q')
-        self.assertEqual(err.connection, 'testdb')
-        self.assertEqual(err.sql, statement)                    # e.statement, not the rendered SQL
-        self.assertEqual(err.code, 'ORA-00904')
-        self.assertEqual(err.db_message, 'ORA-00904: "COLEGEJAAR": invalid identifier')
-        self.assertEqual((err.raw_offset, err.offset), (7, 7))
+        self.assertEqual(err.connection, 'fake')
+        self.assertEqual(err.sql, get_sql('q', env=self.env, collegejaar=2024).text)
+        self.assertIsNone(err.code)                             # sqlite: no error object
+        self.assertIn('no such table', err.db_message)
+        self.assertIsNone(err.offset)
         self.assertEqual(err.passed, {'collegejaar': 2024, 'colegejaar': 2024})
         self.assertEqual(err.not_passed, ['opleiding'])
         self.assertEqual(err.unused, ['colegejaar'])
         self.assertEqual(err.path, str(self.root / 'q.sql'))
+        self.assertIsInstance(err.__cause__, sqlite3.OperationalError)
+
+    def test_exact_parse_for_caret(self) -> None:
+        driver = DriverError('ORA-00904', 'ORA-00904: "COLEGEJAAR": invalid identifier', 7)
+        with mock.patch.object(execution, '_driver_error', return_value=driver), \
+             mock.patch.object(execution, '_exact_offset', return_value=7) as exact:
+            self.run_query(collegejaar=2024)
+        err = errors.last_error('fake')
+        exact.assert_called_once_with(self.settings, err.sql, 'ORA-00904')
+        self.assertEqual((err.code, err.raw_offset, err.offset), ('ORA-00904', 7, 7))
 
     def test_no_exact_parse_without_caret(self) -> None:
-        orig = DriverException('ORA-01476', 'ORA-01476: divisor is equal to zero', offset=9)
-        with mock.patch.object(execution, '_exact_offset') as exact:
-            self.run_failing(DatabaseError('select 1/0 from dual', {}, orig), collegejaar=2024)
+        driver = DriverError('ORA-01476', 'ORA-01476: divisor is equal to zero', 9)
+        with mock.patch.object(execution, '_driver_error', return_value=driver), \
+             mock.patch.object(execution, '_exact_offset') as exact:
+            self.run_query(collegejaar=2024)
         exact.assert_not_called()
-        self.assertEqual(errors.last_error('testdb').raw_offset, 9)
+        self.assertEqual(errors.last_error('fake').raw_offset, 9)
 
     def test_library_keywords_are_not_unused(self) -> None:
-        self.run_failing(sql_error('select 1'), collegejaar=2024, where='a = 1', label_na='-')
-        self.assertEqual(errors.last_error('testdb').unused, [])
+        self.run_query(collegejaar=2024, where='a = 1', label_na='-')
+        self.assertEqual(errors.last_error('fake').unused, [])
 
     def test_raise_errors(self) -> None:
-        exc = sql_error('select 1')
         with self.assertRaises(QueryError) as cm:
-            self.run_failing(exc, collegejaar=2024, raise_errors=True)
-        self.assertIs(cm.exception.__cause__, exc)
-        self.assertIs(errors.last_error('testdb'), cm.exception)
+            self.run_query(collegejaar=2024, raise_errors=True)
+        self.assertIsInstance(cm.exception.__cause__, sqlite3.OperationalError)
+        self.assertIs(errors.last_error('fake'), cm.exception)
         self.report.assert_not_called()
-
-    def test_interface_error_with_statement_is_query_error(self) -> None:
-        orig = DriverException('DPY-1001', 'DPY-1001: not connected to database')
-        self.run_failing(InterfaceError('select 1', {}, orig), collegejaar=2024)
-        err = errors.last_error('testdb')
-        self.assertIsInstance(err, QueryError)
-        self.assertEqual(err.code, 'DPY-1001')
-        self.assertIsNone(err.offset)
-
-    def test_driver_without_error_object(self) -> None:
-        orig = Exception('Binder Error: column "x" not found')      # e.g. duckdb
-        self.run_failing(DatabaseError('select x', {}, orig), collegejaar=2024)
-        err = errors.last_error('testdb')
-        self.assertIsNone(err.code)
-        self.assertEqual(err.db_message, 'Binder Error: column "x" not found')
 
     def test_sql_passed_in_keeps_name_and_parameters(self) -> None:
         sql = get_sql('q', env=self.env, collegejaar=2024, colegejaar=2024)
-        self.run_failing(sql_error(sql.text), query=sql)
-        err = errors.last_error('testdb')
+        self.run_query(sql)
+        err = errors.last_error('fake')
         self.assertEqual(err.query_name, 'q')
         self.assertEqual(err.path, str(self.root / 'q.sql'))
         self.assertEqual(err.passed, {'collegejaar': 2024, 'colegejaar': 2024})
@@ -131,8 +115,8 @@ class QueryErrorTest(ExecutionErrorTest):
         self.assertEqual(err.unused, ['colegejaar'])
 
     def test_inline_sql_has_parameter_report(self) -> None:
-        self.run_failing(sql_error('select 1'), query='select {{ x }} from dual')
-        err = errors.last_error('testdb')
+        self.run_query('select {{ x }} from no_such_table')
+        err = errors.last_error('fake')
         self.assertEqual(err.query_name, '<inline>')
         self.assertEqual(err.not_passed, ['x'])
         self.assertEqual(err.unused, [])
@@ -140,13 +124,13 @@ class QueryErrorTest(ExecutionErrorTest):
 
     def test_get_sql_options_not_in_passed(self) -> None:
         with mock.patch('builtins.print'):
-            self.run_failing(sql_error('select 1'), collegejaar=2024, print_sql=True)
-        self.assertEqual(errors.last_error('testdb').passed, {'collegejaar': 2024})
+            self.run_query(collegejaar=2024, print_sql=True)
+        self.assertEqual(errors.last_error('fake').passed, {'collegejaar': 2024})
 
     def test_sql_with_parameters_raises(self) -> None:
         sql = get_sql('q', env=self.env, collegejaar=2024)
         with self.assertRaises(TypeError):
-            execution.execute_query(sql, settings=SETTINGS, collegejaar=2025)
+            self.run_query(sql, collegejaar=2025)
 
 
 class ExactOffsetTest(unittest.TestCase):
@@ -195,60 +179,95 @@ class ExactOffsetTest(unittest.TestCase):
         self.assertIsNone(execution._exact_offset(settings, 'select 1', 'ORA-00942'))
 
 
-class ConnectErrorTest(ExecutionErrorTest):
+class ConnectErrorTest(ExecutionTest):
     def test_connect_error(self) -> None:
-        self.assertIsNone(self.run_failing(connect_error(), collegejaar=2024))
-        err = errors.last_error('testdb')
+        self.assertIsNone(self.run_query(settings=FakeSettings(connect_error=True), collegejaar=2024))
+        err = errors.last_error('fake')
         self.assertIsInstance(err, ConnectError)
-        self.assertEqual((err.connection, err.code), ('testdb', 'DPY-6005'))
-        self.assertEqual(err._render_traceback_()[-1], '(HTML view: testdb.last_error)')
+        self.assertEqual(err.connection, 'fake')
+        self.assertIn('unable to open', err.db_message)
+        self.report.assert_called_once_with(err)
+        self.assertEqual(err._render_traceback_()[-1], '(HTML view: fake.last_error)')
 
     def test_connect_error_raised(self) -> None:
         with self.assertRaises(ConnectError):
-            self.run_failing(connect_error(), collegejaar=2024, raise_errors=True)
+            self.run_query(settings=FakeSettings(connect_error=True), collegejaar=2024, raise_errors=True)
 
 
-class OtherErrorsTest(ExecutionErrorTest):
-    def test_no_statement_error_in_chain_is_reraised(self) -> None:
-        wrapper = PandasDatabaseError('not from the driver')
-        wrapper.__cause__ = ResourceClosedError('closed')
-        with self.assertRaises(PandasDatabaseError) as cm:
-            self.run_failing(wrapper, collegejaar=2024, raise_errors=True)
-        self.assertIs(cm.exception, wrapper)
-        self.assertIsNone(errors.last_error('testdb'))
+class OtherErrorsTest(ExecutionTest):
+    def test_no_result_set_raised_not_stored(self) -> None:
+        with self.assertRaisesRegex(TypeError, 'no result set'):
+            self.run_query('create table x (a int)\n')
+        self.assertIsNone(errors.last_error('fake'))
         self.report.assert_not_called()
 
     def test_template_error_raised_and_stored(self) -> None:
         with self.assertRaises(TemplateError) as cm:
-            execution.execute_query('broken', settings=SETTINGS, env=self.env)
-        self.assertIs(errors.last_error('testdb'), cm.exception)
+            self.run_query('broken')
+        self.assertIs(errors.last_error('fake'), cm.exception)
         self.report.assert_not_called()
 
     def test_query_not_found_raised_and_stored(self) -> None:
         with self.assertRaises(QueryNotFound) as cm:
-            execution.execute_query('nope', settings=SETTINGS, env=self.env)
-        self.assertIs(errors.last_error('testdb'), cm.exception)
+            self.run_query('nope')
+        self.assertIs(errors.last_error('fake'), cm.exception)
 
 
-class IndexColTest(ExecutionErrorTest):
-    def index_col(self, query='q', **kwargs):
-        captured = {}
-        def read(sql, con, **kw):
-            captured.update(kw)
-            raise RuntimeError('stop')
-        with mock.patch.object(execution.pd, 'read_sql_query', read), self.assertRaises(RuntimeError):
-            execution.execute_query(query, settings=SETTINGS, env=self.env, **kwargs)
-        return captured['index_col']
+class ResultTest(ExecutionTest):
+    def test_frame(self) -> None:
+        df = self.run_query(rows(3))
+        self.assertEqual(list(df.columns), ['n', 's'])
+        self.assertEqual(df['n'].tolist(), [1, 2, 3])
+
+    def test_squeeze(self) -> None:
+        self.assertIsInstance(self.run_query('select n from (' + rows(3) + ')\n'), pd.Series)
+        row = self.run_query(rows(1))
+        self.assertIsInstance(row, pd.Series)
+        self.assertEqual(row.name, '<inline>')
+        self.assertIsInstance(self.run_query(rows(1), squeeze=False), pd.DataFrame)
+
+    def test_max_rows(self) -> None:
+        df = self.run_query(rows(10), max_rows=3)
+        self.assertEqual(df['n'].tolist(), [1, 2, 3])
+
+    def test_max_rows_zero(self) -> None:
+        df = self.run_query(rows(10), max_rows=0)
+        self.assertIsInstance(df, pd.DataFrame)
+        self.assertEqual((len(df), list(df.columns)), (0, ['n', 's']))
+
+    def test_max_rows_is_not_a_template_parameter(self) -> None:
+        self.run_query('select {{ x }} from no_such_table', max_rows=3)
+        self.assertEqual(errors.last_error('fake').passed, {})
+
+
+class IndexColTest(ExecutionTest):
+    QUERY = 'select 1 as a, 2 as b\n'
 
     def test_from_columns_keyword(self) -> None:
-        self.assertEqual(self.index_col(collegejaar=2024, columns=['a']), ['a'])
+        df = self.run_query(self.QUERY, columns=['a'], squeeze=False)
+        self.assertEqual(df.index.names, ['a'])
 
     def test_from_sql_passed_in(self) -> None:
-        sql = get_sql('q', env=self.env, collegejaar=2024, columns=['a'])
-        self.assertEqual(self.index_col(sql), ['a'])
+        sql = get_sql(self.QUERY, env=self.env, columns=['a'])
+        self.assertEqual(self.run_query(sql, squeeze=False).index.names, ['a'])
 
     def test_false_means_none(self) -> None:
-        self.assertIsNone(self.index_col(collegejaar=2024, columns=['a'], index_col=False))
+        df = self.run_query(self.QUERY, columns=['a'], index_col=False, squeeze=False)
+        self.assertEqual(list(df.columns), ['a', 'b'])
+
+
+class ClashWarningTest(ExecutionTest):
+    def test_warns_for_execution_keyword_in_template(self) -> None:
+        query = '{% if dtype %}-- {{ dtype }}{% endif %}\nselect 1 as x'
+        with self.assertWarnsRegex(UserWarning, r"<inline>: template uses \['dtype'\]") as cm:
+            self.run_query(query)
+        self.assertEqual(cm.filename, __file__)              # the caller, not the library
+
+    def test_no_warning_without_clash(self) -> None:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            self.run_query(rows(2))
+        self.assertEqual(caught, [])
 
 
 class ModuleGetattrTest(unittest.TestCase):
@@ -278,6 +297,15 @@ class KeywordListsTest(unittest.TestCase):
             variables = meta.find_undeclared_variables(ENV.parse(source)) - self.INTERNAL
             with self.subTest(template=name):
                 self.assertLessEqual(variables, keywords)
+
+    def test_execution_keywords_match_signatures(self) -> None:
+        def keyword_only(f) -> set[str]:
+            return {
+                p.name for p in inspect.signature(f).parameters.values()
+                if p.kind is p.KEYWORD_ONLY
+            }
+        expected = keyword_only(execution.execute_query) | keyword_only(definition.get_sql)
+        self.assertEqual(set(EXECUTION_KEYWORDS), expected)
 
 
 if __name__ == '__main__':

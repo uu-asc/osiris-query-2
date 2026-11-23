@@ -101,6 +101,15 @@ AGG_KEYWORDS: list[str] = [
     'cube_totals',
     'label_totals',
 ]
+# Keywords execute_query consumes before the template sees them: its own
+# keyword parameters and get_sql's options. A template variable with one of
+# these names gets no value through execute_query (it warns). Kept explicit;
+# a test checks it against both signatures.
+EXECUTION_KEYWORDS: frozenset[str] = frozenset({
+    'env', 'parse_dates', 'index_col', 'dtype', 'dtype_backend', 'squeeze',
+    'raise_errors', 'max_rows',
+    'print_sql', 'save_to_path', 'print_vars',
+})
 # Defaults for the aggregation keywords, from config; applied by Query.render.
 AGG_DEFAULTS: dict[str, Any] = CONFIG['defaults']['aggregation']
 DOCSTRING: str = f"""

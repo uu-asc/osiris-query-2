@@ -1,5 +1,7 @@
+import os
 import threading
 import time
+import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -9,13 +11,11 @@ from typing import Any, NamedTuple
 import pandas as pd
 from pandas.io.sql import _wrap_result
 from jinja2 import Environment
-from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError, StatementError
-from pandas.errors import DatabaseError as PandasDatabaseError
+from sqlalchemy.exc import DBAPIError
 
 from query import definition, errors, utils
 from query.config import ConnectionSettings
-from query.definition import AGG_KEYWORDS, SQL, UTIL_KEYWORDS, Query
+from query.definition import AGG_KEYWORDS, EXECUTION_KEYWORDS, SQL, UTIL_KEYWORDS, Query
 from query.errors import (
     ConnectError,
     KeywordError,
@@ -39,6 +39,7 @@ def execute_query(
     dtype_backend: str = 'numpy_nullable', # numpy_nullable / pyarrow
     squeeze: bool = True,
     raise_errors: bool = False,
+    max_rows: int | None = None,
     **kwargs
 ) -> pd.DataFrame | pd.Series | None:
     """
@@ -67,8 +68,13 @@ def execute_query(
     - raise_errors (bool):
         Raise ConnectError/QueryError instead of showing it and returning
         None. Default is False.
+    - max_rows (int | None):
+        Stop fetching after this many rows. A client-side limit: the query is
+        not changed (unlike the `n` keyword). Default is None (no limit).
     - **kwargs:
-        Additional keyword arguments passed to the query definition.
+        Additional keyword arguments passed to the query definition. A
+        template variable with the name of one of this function's keywords
+        (definition.EXECUTION_KEYWORDS) gets no value; this gives a warning.
 
     Returns:
     - pd.DataFrame | pd.Series | None: The query result, or None if the
@@ -79,7 +85,8 @@ def execute_query(
     Raises:
     - QueryNotFound, TemplateError, KeywordError: Always; nothing was sent.
     - ConnectError, QueryError: Only with `raise_errors=True`.
-    - TypeError: `query` is an SQL and template keywords were passed.
+    - TypeError: `query` is an SQL and template keywords were passed, or the
+        statement returned no result set (after it has run).
     The errors of this library are stored as `<connection module>.last_error`.
     """
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
@@ -88,35 +95,31 @@ def execute_query(
     except (QueryNotFound, TemplateError, KeywordError) as e:
         errors.remember(settings.name, e)
         raise
-    con = settings.engine()
+    _warn_clash(sql)
     if index_col is None:
         index_col = sql.params.get('columns')
     elif index_col == False:
         index_col = None
     try:
-        df = pd.read_sql_query(
-            text(sql.text),     # old path only; QueryExecution passes the string as it is
-            con,
+        result = QueryExecution(sql, settings=settings).fetch(
+            max_rows = max_rows,
             parse_dates = parse_dates,
             index_col = index_col,
             dtype = dtype,
             dtype_backend = dtype_backend,
         )
-        if squeeze and len(df.columns) == 1:
-            return df.squeeze(axis=1)
-        if squeeze and len(df) == 1:
-            return df.squeeze().rename(sql.query.name)
-        return df
-
-    except (DBAPIError, PandasDatabaseError) as e:
-        error = _database_error(e, settings, sql)
-        if error is None:
-            raise           # not an error from the driver: leave it as it is
+    except (ConnectError, QueryError) as error:
         errors.remember(settings.name, error)
         if raise_errors:
-            raise error from e
+            raise
         errors.report(error)
         return None
+    df = result.df
+    if squeeze and len(df.columns) == 1:
+        return df.squeeze(axis=1)
+    if squeeze and len(df) == 1:
+        return df.squeeze().rename(sql.query.name)
+    return df
 
 
 # region QueryExecution
@@ -447,7 +450,7 @@ def _cursor(con: Any, dialect: Any, chunksize: int | None, max_rows: int | None)
 
 def _column_names(description: Any, dialect: Any) -> list[str]:
     """
-    Column names as SQLAlchemy reports them on the read_sql_query path. For
+    Column names as SQLAlchemy reports them through pd.read_sql_query. For
     dialects that normalize names (Oracle), case-insensitive uppercase names
     become lowercase (SINH_ID -> sinh_id); quoted mixed-case names stay as
     they are. Other dialects: names as the driver reports them.
@@ -461,7 +464,7 @@ def _column_names(description: Any, dialect: Any) -> list[str]:
 def _frame(data: list[tuple], columns: list[str], **options: Any) -> pd.DataFrame:
     """
     DataFrame from raw rows, built as pd.read_sql_query builds it (pandas'
-    private _wrap_result), so dtypes match the old path. A pandas upgrade that
+    private _wrap_result), so dtypes match read_sql_query. A pandas upgrade that
     renames or changes it fails here loudly; the parity test guards behaviour.
     """
     return _wrap_result(data, columns, **options)
@@ -527,18 +530,6 @@ def _exact_offset(settings: ConnectionSettings, sql: str, code: str) -> int | No
     return None
 
 
-def _statement_error(e: BaseException | None) -> StatementError | None:
-    """
-    First SQLAlchemy StatementError in the __cause__ chain of `e`. pandas
-    wraps the SQLAlchemy error for SQL errors, not for connect errors.
-    """
-    while e is not None:
-        if isinstance(e, StatementError):
-            return e
-        e = e.__cause__
-    return None
-
-
 def _param_report(sql: SQL) -> tuple[list[str] | None, list[str] | None]:
     """
     (not_passed, unused) for QueryError, from the query `sql` was rendered
@@ -555,39 +546,25 @@ def _param_report(sql: SQL) -> tuple[list[str] | None, list[str] | None]:
     return not_passed, unused
 
 
-def _database_error(
-    e: BaseException,
-    settings: ConnectionSettings,
-    sql: SQL,
-) -> ConnectError | QueryError | None:
+# Frames in this package; trailing separator, so a sibling folder like
+# query_scripts/ does not match. Not resolved: frames carry the path as imported.
+_PACKAGE_DIR = os.path.join(os.path.dirname(__file__), "")
+
+
+def _warn_clash(sql: SQL) -> None:
     """
-    ConnectError if no statement was sent (SQLAlchemy's `statement is None`),
-    otherwise QueryError. None if there is no StatementError in the chain:
-    then the error didn't come from the driver.
+    Warn when the template uses a name execute_query consumes itself
+    (EXECUTION_KEYWORDS): such a variable never gets a value through
+    execute_query. A failure in the analysis is ignored: it never stops a
+    query that rendered.
     """
-    stmt = _statement_error(e)
-    if stmt is None:
-        return None
-    driver = _driver_error(stmt.orig if stmt.orig is not None else stmt)
-    if stmt.statement is None:
-        return ConnectError(
-            connection=settings.name,
-            code=driver.code,
-            db_message=driver.message,
+    try:
+        clash = EXECUTION_KEYWORDS & sql.query.params()
+    except Exception:
+        return
+    if clash:
+        warnings.warn(
+            f"{sql.query.name}: template uses {sorted(clash)}; these are "
+            "consumed by execute_query and won't reach the template",
+            skip_file_prefixes=(_PACKAGE_DIR,),    # shown at the caller, past the wrappers
         )
-    raw_offset = driver.offset
-    if errors.caret_offset(driver.code, raw_offset, stmt.statement) is not None:
-        raw_offset = _exact_offset(settings, stmt.statement, driver.code)
-    not_passed, unused = _param_report(sql)
-    return QueryError(
-        query_name=sql.query.name,
-        connection=settings.name,
-        sql=stmt.statement,
-        code=driver.code,
-        db_message=driver.message,
-        raw_offset=raw_offset,
-        passed=dict(sql.params),
-        not_passed=not_passed,
-        unused=unused,
-        path=sql.query.path,
-    )

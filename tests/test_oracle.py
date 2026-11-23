@@ -14,7 +14,7 @@ import unittest
 # shift Oracle's own position; the cases with literals check that the second
 # parse with cursor_sharing = exact (execution._exact_offset) corrects it.
 # Comments are not rewritten. Positions verified with dbms_sql on 2026-11-23.
-# No ':' (bind parameter on the read_sql_query path) and no '{' (Jinja).
+# No '{' (Jinja).
 # Single-line statements must start with 'select ' to be read as inline SQL.
 OFFSET_CASES = [
     # no literals
@@ -96,9 +96,9 @@ class TestOracleExecution(unittest.TestCase):
 
     def test_parity_with_read_sql_query(self) -> None:
         """
-        execute_query (read_sql_query over SQLAlchemy) and QueryExecution (raw
-        cursor + _wrap_result) give the same frame. Run before deploying a
-        pandas, SQLAlchemy or oracledb upgrade.
+        pd.read_sql_query (over SQLAlchemy) and QueryExecution (raw cursor +
+        _wrap_result) give the same frame. Run before deploying a pandas,
+        SQLAlchemy or oracledb upgrade.
         """
         import importlib.util
         import pandas as pd
@@ -109,10 +109,7 @@ class TestOracleExecution(unittest.TestCase):
             with self.subTest(dtype_backend=backend):
                 if backend == 'pyarrow' and importlib.util.find_spec('pyarrow') is None:
                     self.skipTest('pyarrow not installed')
-                old = execution.execute_query(
-                    PARITY, settings=osiris.SETTINGS,
-                    dtype_backend=backend, squeeze=False, raise_errors=True,
-                )
+                old = pd.read_sql_query(PARITY, osiris.SETTINGS.engine(), dtype_backend=backend)
                 new = execution.QueryExecution(PARITY, settings=osiris.SETTINGS).fetch(
                     chunksize=7, dtype_backend=backend,
                 ).df
