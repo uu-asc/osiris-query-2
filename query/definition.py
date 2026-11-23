@@ -1,8 +1,9 @@
 import difflib
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from jinja2 import (
     BaseLoader,
@@ -13,7 +14,6 @@ from jinja2 import (
     TemplateSyntaxError,
     meta,
 )
-from sqlalchemy import text, TextClause
 
 import sqlparse
 from sqlparse.sql import Token, TokenList
@@ -22,6 +22,7 @@ from sqlparse.tokens import CTE, DML
 from query import utils
 from query import aggspec
 from query.config import CONFIG, get_paths_from_config
+from query import errors
 from query.errors import KeywordError, QueryNotFound, TemplateError
 
 
@@ -35,9 +36,6 @@ class TemplateRaise(Exception):
     Raised by the `raise()` helper in templates. Internal: `get_sql` converts
     it to KeywordError (library templates) or TemplateError (the user's own).
     """
-
-
-TextClause.__repr__ = lambda self: self.text
 
 
 def get_template_loader(
@@ -103,6 +101,8 @@ AGG_KEYWORDS: list[str] = [
     'cube_totals',
     'label_totals',
 ]
+# Defaults for the aggregation keywords, from config; applied by Query.render.
+AGG_DEFAULTS: dict[str, Any] = CONFIG['defaults']['aggregation']
 DOCSTRING: str = f"""
     Optional keywords:
 
@@ -153,63 +153,208 @@ DOCSTRING: str = f"""
 """
 
 
+# region query
+@dataclass(frozen=True)
+class Query:
+    """
+    A query template: from a query file, or inline text.
+
+    Fields:
+    - text: SQL/Jinja source: file contents, or the string as passed.
+    - name: As passed ('matching/eindstatus') for `from_name`, the resolved
+        path for `from_path`, '<inline>' for `from_text`.
+    - path: Resolved file path; None for inline SQL.
+    - env: Jinja environment used for rendering and analysis.
+    """
+    text: str
+    name: str
+    path: str | None
+    env: Environment = field(default=ENV, repr=False, compare=False)
+
+    @classmethod
+    def from_name(cls, name: str | Path, env: Environment | None = None) -> 'Query':
+        """
+        Query file `name`, found through the loader's search paths (the
+        configured query folders and '.'). '.sql' is added if missing.
+
+        Raises:
+        - QueryNotFound: No such file in the search paths.
+        """
+        env = ENV if env is None else env
+        query = _find(name, env)
+        if query is None:
+            raise _query_not_found(str(name), env)
+        return query
+
+    @classmethod
+    def from_path(cls, path: str | Path, env: Environment | None = None) -> 'Query':
+        """
+        Query file at `path`, anywhere on disk (e.g. an absolute path the
+        loader can't find). `{% include %}` in it still goes through the loader.
+
+        Raises:
+        - QueryNotFound: The file can't be read.
+        """
+        path = Path(path).resolve()
+        try:
+            text = path.read_text(encoding='utf-8')
+        except OSError:
+            raise QueryNotFound(query_name=str(path), searched=[], suggestions=[]) from None
+        return cls(text, name=str(path), path=str(path), env=ENV if env is None else env)
+
+    @classmethod
+    def from_text(cls, text: str, env: Environment | None = None) -> 'Query':
+        """Inline query template `text`."""
+        return cls(text, name=DEFAULT_QUERY_NAME, path=None, env=ENV if env is None else env)
+
+    def params(self) -> set[str]:
+        """Template variables of the query (not following `{% include %}`)."""
+        return meta.find_undeclared_variables(self.env.parse(self.text))
+
+    def render(self, **params) -> 'SQL':
+        """
+        Render the query with `params`. The aggregation defaults (AGG_DEFAULTS)
+        are used for rendering; `SQL.params` holds only `params`.
+
+        Raises:
+        - TemplateError: Rendering the query (or a file it includes) failed.
+        - KeywordError: Library keywords (where, values, ...) are invalid.
+        """
+        context = AGG_DEFAULTS | params
+        try:
+            rendered = self.env.from_string(self.text).render(**context)
+        except Exception as e:
+            raise _template_error(e, self) from e
+        if any(kwd in params for kwd in UTIL_KEYWORDS):
+            try:
+                rendered = wrap_sql(rendered, env=self.env, **context)
+            except Exception as e:
+                # Wrong keyword arguments are by far the most likely cause, so
+                # everything is reported as KeywordError; the cause is chained.
+                raise _keyword_error(e, self) from e
+        return SQL(rendered, query=self, params=dict(params))
+
+
+@dataclass(frozen=True, eq=False)
+class SQL:
+    """
+    A rendered query, as sent to the database. Created by `Query.render`.
+    Displays as SQL (highlighted in notebooks); `str(sql)` or `sql.text` gives
+    the string.
+
+    Fields:
+    - text: The rendered SQL.
+    - query: The query it was rendered from.
+    - params: The parameters it was rendered with.
+    """
+    text: str
+    query: Query
+    params: dict[str, Any]
+
+    def __str__(self) -> str:
+        return self.text
+
+    def __repr__(self) -> str:
+        return self.text
+
+    def _repr_html_(self) -> str:
+        return errors.sql_html(self.text)
+
+
+# Statements that return rows: a one-line string starting with one of these
+# is taken as SQL. Extend when needed.
+_SQL_START = frozenset({'select', 'with'})
+_FIRST_WORD = re.compile(r'\s*\(*\s*(\w+)')
+
+
+def _find(name: str | Path, env: Environment) -> Query | None:
+    """The query file `name` resolves to through the loader; None if not found."""
+    path = Path(name)
+    if path.suffix != '.sql':
+        path = path.with_suffix(path.suffix + '.sql')
+    try:
+        text, filename, _ = env.loader.get_source(env, path.as_posix())
+    except TemplateNotFound:
+        return None
+    filename = str(Path(filename).resolve()) if filename else None
+    return Query(text, name=str(name), path=filename, env=env)
+
+
+def _as_query(source: 'Query|Path|str', env: Environment|None) -> Query:
+    """
+    `source` as a Query. A Query is returned unchanged (with its own env). A
+    string or Path is, in this order:
+    1. a string with a newline: SQL;
+    2. a query file the loader finds, or an existing absolute path: that file;
+    3. a string whose first word is in _SQL_START: SQL;
+    4. otherwise QueryNotFound.
+    """
+    if isinstance(source, Query):
+        return source
+    env = ENV if env is None else env
+    if isinstance(source, str) and '\n' in source:
+        return Query.from_text(source, env)
+    if not isinstance(source, (str, Path)):
+        raise TypeError(f"expected Query, Path or str, got {type(source).__name__}")
+    query = _find(source, env)
+    if query is not None:
+        return query
+    if Path(source).is_absolute() and Path(source).is_file():
+        return Query.from_path(source, env)
+    if isinstance(source, str):
+        match = _FIRST_WORD.match(source)
+        if match and match[1].lower() in _SQL_START:
+            return Query.from_text(source, env)
+    raise _query_not_found(str(source), env)
+
+
 # region get sql
-@utils.add_keyword_defaults(CONFIG['defaults']['aggregation'])
 @utils.add_to_docstring(DOCSTRING)
 def get_sql(
-    source: 'Path|str|QuerySource',
+    source: 'SQL|Query|Path|str',
     *,
     env: Environment|None = None,
     save_to_path: Path|str|None = None,
     print_sql: bool = False,
     print_vars: bool = False,
     **kwargs
-) -> TextClause:
+) -> SQL:
     """
-    Retrieves a SQL query template from file or string, renders it with Jinja2, and returns a TextClause.
+    Render a query (a query name or file path, an SQL string, or a Query) and
+    return it as SQL.
 
     Parameters:
-    - source (Path|str|QuerySource): Path to file or string containing the
-        SQL query, or an already loaded query (passed through unchanged).
+    - source (SQL|Query|Path|str): Query name or file path, SQL string, or a
+        Query. An SQL (already rendered) is returned unchanged.
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
+        A Query keeps its own environment.
     - save_to_path (Path|str|None): Path to save rendered query.
     - print_sql (bool): If True, prints rendered query.
     - print_vars (bool): If True, prints template variables.
     - **kwargs: Additional keyword arguments to be passed to template.
 
     Returns:
-    TextClause: The processed SQL query as a SQLAlchemy TextClause.
+    SQL: The rendered query; `.text` gives the string.
 
     Raises:
-    - QueryNotFound: `source` looks like a path and the file is not found.
+    - QueryNotFound: `source` is neither a query file nor SQL.
     - TemplateError: Rendering the query (or a file it includes) failed.
     - KeywordError: Library keywords (where, values, ...) are invalid.
+    - TypeError: `source` is an SQL and keyword arguments were passed.
     """
-    if isinstance(source, TextClause):
+    if isinstance(source, SQL):
+        if kwargs:
+            raise TypeError(
+                f"query is already rendered; parameters {sorted(kwargs)} would be ignored"
+            )
         return source
-    env = ENV if env is None else env
-    query = load_query(source, env=env)
+    query = _as_query(source, env)
 
     if print_vars:
-        variables = get_params(query.text, env=env)
-        print(variables)
+        print(query.params())
 
-    try:
-        template = env.from_string(query.text)
-        rendered = template.render(**kwargs)
-    except Exception as e:
-        raise _template_error(e, query, env) from e
-
-    if any(kwd in kwargs for kwd in UTIL_KEYWORDS):
-        try:
-            rendered = wrap_sql(rendered, env=env, **kwargs)
-        except Exception as e:
-            # Wrong keyword arguments are by far the most likely cause, so
-            # everything is reported as KeywordError; the cause is chained.
-            raise _keyword_error(e, query) from e
-
-    sql = TextClause(rendered)
+    sql = query.render(**kwargs)
 
     if print_sql:
         print(sql.text)
@@ -220,7 +365,7 @@ def get_sql(
 
 
 def get_params(
-    source: 'Path|str|QuerySource',
+    source: 'Query|Path|str',
     *,
     env: Environment|None = None,
 ) -> set[str]:
@@ -228,19 +373,14 @@ def get_params(
     Get parameters in `source`.
 
     Parameters:
-    - source (Path|str): Path to file or string containing the SQL query.
+    - source (Query|Path|str): Query name or file path, SQL string, or a Query.
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
 
     Returns:
     set: Set of variables in query statement.
     """
-    env = ENV if env is None else env
-    source = try_path(source, env=env)
-
-    ast = env.parse(source)
-    variables = meta.find_undeclared_variables(ast)
-    return variables
+    return _as_query(source, env).params()
 
 
 def get_raw_sql(
@@ -251,8 +391,6 @@ def get_raw_sql(
     print_sql: bool = False,
     **kwargs
 ) -> str:
-    env = ENV if env is None else env
-
     raw_sql = try_path(source, env=env)
     if print_sql:
         print(raw_sql)
@@ -261,106 +399,25 @@ def get_raw_sql(
     return raw_sql
 
 
-@dataclass(frozen=True)
-class QuerySource:
-    """
-    A query as loaded: from a file, or the string as passed.
-
-    Fields:
-    - text: SQL/Jinja source: file contents, or the string as passed.
-    - name: As passed ('matching/eindstatus'), or '<inline>' for inline SQL.
-    - path: Resolved file path; None for inline SQL.
-    """
-    text: str
-    name: str
-    path: str | None
-
-
-def load_query(
-    source: Path|str|QuerySource,
-    *,
-    env: Environment|None = None,
-) -> QuerySource:
-    """
-    Load `source`: a query file if `source` looks like a path (see `is_path`),
-    otherwise the string itself. A '.sql' suffix is added to paths without it.
-    A QuerySource is returned unchanged, so a query loaded once can be passed
-    on (e.g. from `execute_query` to `get_sql`) without reading it again.
-
-    Parameters:
-    - source (Path|str|QuerySource): Path to file or string containing the
-        SQL query, or an already loaded query.
-    - env (Environment|None):
-        Jinja2 environment. If not provided, the default environment is used.
-
-    Returns:
-    QuerySource: Text, name and path of the query.
-
-    Raises:
-    - QueryNotFound: `source` looks like a path and the file is not found.
-    """
-    if isinstance(source, QuerySource):
-        return source
-    if not is_path(source):
-        return QuerySource(text=source, name=DEFAULT_QUERY_NAME, path=None)
-    env = ENV if env is None else env
-    path = Path(source)
-    if path.suffix != '.sql':
-        path = path.with_suffix(path.suffix + '.sql')
-    try:
-        text, filename, _ = env.loader.get_source(env, path.as_posix())
-    except TemplateNotFound:
-        raise _query_not_found(str(source), env) from None
-    filename = str(Path(filename).resolve()) if filename else None
-    return QuerySource(text=text, name=str(source), path=filename)
-
-
 def try_path(
-    source: Path|str,
+    source: 'Query|Path|str',
     *,
     env: Environment|None = None,
 ) -> SqlString:
     """
-    Test if `source` is path and if so load query statement from it. Else do nothing.
+    Source text of `source`: the query file's contents, or the SQL string.
 
-    Kept for backwards compatibility; see `load_query`.
+    Kept for backwards compatibility; see `Query`.
 
     Parameters:
-    - source (Path|str): Path to file or string containing the SQL query.
+    - source (Query|Path|str): Query name or file path, SQL string, or a Query.
     - env (Environment|None):
         Jinja2 environment. If not provided, the default environment is used.
 
     Returns:
     SqlString: A string representing a sql query.
     """
-    return load_query(source, env=env).text
-
-
-def is_path(source: Path|str) -> bool:
-    """
-    Test if source is a path (and not a sql statement).
-    Assumes that if source:
-    - is a Path then True
-    - is a string with newline then False
-    - is a single string starting with 'select ' then False
-    - else True
-
-    Parameters:
-    - source (Path|str):
-        Source to be tested. Could be a string representing a path or a sql statement.
-
-    Returns:
-    bool: Whether the source is a path or a sql statement.
-    """
-    if isinstance(source, Path):
-        return True
-    if isinstance(source, TextClause):
-        return False
-    if '\n' in source:
-        return False
-    if source.lower().startswith('select '):
-        return False
-    return True
+    return _as_query(source, env).text
 
 
 # region errors
@@ -429,7 +486,7 @@ def _relative_name(filename: str, searched: list[Path]) -> str | None:
     return None
 
 
-def _template_error(e: Exception, query: QuerySource, env: Environment) -> TemplateError:
+def _template_error(e: Exception, query: Query) -> TemplateError:
     """
     TemplateError for an exception raised while rendering `query`. The
     template and line come from the exception (syntax errors) or from the
@@ -451,6 +508,7 @@ def _template_error(e: Exception, query: QuerySource, env: Environment) -> Templ
             source=query.text, lineno=lineno, path=query.path,
         )
 
+    env = query.env
     name = _relative_name(filename, _searchpaths(env)) or filename
     try:
         source, *_ = env.loader.get_source(env, name)
@@ -462,7 +520,7 @@ def _template_error(e: Exception, query: QuerySource, env: Environment) -> Templ
     )
 
 
-def _keyword_error(e: Exception, query: QuerySource) -> KeywordError:
+def _keyword_error(e: Exception, query: Query) -> KeywordError:
     """KeywordError for an exception raised in `wrap_sql` (or aggspec)."""
     if isinstance(e, aggspec.ValidationError):
         return KeywordError(query.name, keyword='values', message=str(e))

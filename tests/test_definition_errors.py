@@ -4,14 +4,11 @@ from pathlib import Path
 
 from query import aggspec
 from query.definition import (
-    DEFAULT_QUERY_NAME,
-    QuerySource,
+    Query,
     TemplateRaise,
     get_environment,
     get_params,
     get_sql,
-    load_query,
-    try_path,
 )
 from query.errors import KeywordError, QueryNotFound, TemplateError
 
@@ -48,31 +45,10 @@ class DefinitionErrorTest(unittest.TestCase):
         return cm.exception
 
 
-class LoadQueryTest(DefinitionErrorTest):
-    def test_file(self) -> None:
-        query = load_query('plain', env=self.env)
-        self.assertEqual(query, QuerySource(
-            text=FILES['plain.sql'],
-            name='plain',
-            path=str(self.root / 'plain.sql'),
-        ))
-
-    def test_file_with_suffix(self) -> None:
-        self.assertEqual(load_query('plain.sql', env=self.env).path, str(self.root / 'plain.sql'))
-
-    def test_inline(self) -> None:
-        sql = 'select a\nfrom t'
-        self.assertEqual(load_query(sql, env=self.env), QuerySource(sql, DEFAULT_QUERY_NAME, None))
-        self.assertEqual(DEFAULT_QUERY_NAME, '<inline>')
-
-    def test_try_path_returns_text(self) -> None:
-        self.assertEqual(try_path('plain', env=self.env), FILES['plain.sql'])
-
-
 class QueryNotFoundTest(DefinitionErrorTest):
     def test_raised_with_search_paths_and_suggestions(self) -> None:
         with self.assertRaises(QueryNotFound) as cm:
-            load_query('matching/eindstatus_niew', env=self.env)
+            Query.from_name('matching/eindstatus_niew', env=self.env)
         err = cm.exception
         self.assertEqual(err.query_name, 'matching/eindstatus_niew')
         self.assertEqual(err.searched[0], str(self.root))
@@ -88,7 +64,7 @@ class QueryNotFoundTest(DefinitionErrorTest):
 
     def test_html(self) -> None:
         with self.assertRaises(QueryNotFound) as cm:
-            load_query('matching/eindstatus_niew', env=self.env)
+            Query.from_name('matching/eindstatus_niew', env=self.env)
         html = cm.exception._repr_html_()
         self.assertIn('QueryNotFound', html)
         self.assertIn('matching/eindstatus', html)

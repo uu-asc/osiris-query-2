@@ -1,0 +1,9 @@
+{#
+Rendered SQL (SQL._repr_html_): numbered, highlighted lines.
+Context: rows (see the code macro), css.
+#}
+{% from 'macros.html.j2' import code %}
+<div class="oq2 sql">
+<style>{{ css }}</style>
+{{ code(rows) }}
+</div>

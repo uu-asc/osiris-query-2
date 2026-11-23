@@ -2,7 +2,7 @@
 Frame for every error display: header, file path, message.
 Context: e (the error), kind, title (list of str), raised_at (str), message (str), css.
 #}
-<div class="oq2-error">
+<div class="oq2 error">
 <style>{{ css }}</style>
 <div class="header"><b>{{ kind }}</b>{% for part in title %} · {{ part }}{% endfor %}<span class="time">{{ raised_at }}</span></div>
 {% if e.path %}

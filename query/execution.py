@@ -1,27 +1,21 @@
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import pandas as pd
 from jinja2 import Environment
-from sqlalchemy import TextClause
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, StatementError
 from pandas.errors import DatabaseError as PandasDatabaseError
 
 from query import definition, errors, utils
 from query.config import ConnectionSettings
-from query.definition import (
-    AGG_KEYWORDS,
-    DEFAULT_QUERY_NAME,
-    UTIL_KEYWORDS,
-    QuerySource,
-    get_params,
-)
+from query.definition import AGG_KEYWORDS, SQL, UTIL_KEYWORDS, Query
 from query.errors import ConnectError, KeywordError, QueryError, QueryNotFound, TemplateError
 
 
 @utils.add_to_docstring(definition.DOCSTRING)
 def execute_query(
-    query: TextClause | Path | str,
+    query: SQL | Query | Path | str,
     /,
     settings: ConnectionSettings,
     *,
@@ -38,8 +32,9 @@ def execute_query(
     Execute a SQL query and return the result as a pandas DataFrame.
 
     Parameters:
-    - query (TextClause | Path | str):
-        SQL query definition, file path, or raw SQL string.
+    - query (SQL | Query | Path | str):
+        Query name or file path, SQL string, a Query, or an SQL from
+        `get_sql` (then no keyword arguments for the template may be passed).
     - settings (ConnectionSettings):
         Validated connection settings; `settings.engine()` creates the engine.
     - env (Environment | None, optional):
@@ -71,28 +66,23 @@ def execute_query(
     Raises:
     - QueryNotFound, TemplateError, KeywordError: Always; nothing was sent.
     - ConnectError, QueryError: Only with `raise_errors=True`.
-    All errors are stored as `<connection module>.last_error`.
+    - TypeError: `query` is an SQL and template keywords were passed.
+    The errors of this library are stored as `<connection module>.last_error`.
     """
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
-    is_template = not isinstance(query, TextClause)
     try:
-        if is_template:
-            source = definition.load_query(query, env=env)
-            sql = definition.get_sql(source, env=env, **kwargs)
-        else:
-            source = QuerySource(text=query.text, name=DEFAULT_QUERY_NAME, path=None)
-            sql = query
+        sql = definition.get_sql(query, env=env, **kwargs)
     except (QueryNotFound, TemplateError, KeywordError) as e:
         errors.remember(settings.name, e)
         raise
     con = settings.engine()
     if index_col is None:
-        index_col = kwargs.get('columns')
+        index_col = sql.params.get('columns')
     elif index_col == False:
         index_col = None
     try:
         df = pd.read_sql_query(
-            sql,
+            text(sql.text),     # old path only; QueryExecution passes the string as it is
             con,
             parse_dates = parse_dates,
             index_col = index_col,
@@ -102,11 +92,11 @@ def execute_query(
         if squeeze and len(df.columns) == 1:
             return df.squeeze(axis=1)
         if squeeze and len(df) == 1:
-            return df.squeeze().rename(source.name)
+            return df.squeeze().rename(sql.query.name)
         return df
 
     except (DBAPIError, PandasDatabaseError) as e:
-        error = _database_error(e, settings, source, sql, is_template, kwargs, env)
+        error = _database_error(e, settings, sql)
         if error is None:
             raise           # not an error from the driver: leave it as it is
         errors.remember(settings.name, error)
@@ -188,23 +178,17 @@ def _statement_error(e: BaseException | None) -> StatementError | None:
     return None
 
 
-def _param_report(
-    source: QuerySource,
-    is_template: bool,
-    kwargs: dict[str, Any],
-    env: Environment | None,
-) -> tuple[list[str] | None, list[str] | None]:
+def _param_report(sql: SQL) -> tuple[list[str] | None, list[str] | None]:
     """
-    (not_passed, unused) for QueryError; (None, None) without a template.
-    A failure in the analysis never replaces the original error.
+    (not_passed, unused) for QueryError, from the query `sql` was rendered
+    from. (None, None) if the analysis fails: it never replaces the original
+    error.
     """
-    if not is_template:
-        return None, None
     try:
-        variables = get_params(source, env=env)
+        variables = sql.query.params()
     except Exception:
         return None, None
-    passed = set(kwargs)
+    passed = set(sql.params)
     not_passed = sorted(variables - passed)
     unused = sorted(passed - variables - set(UTIL_KEYWORDS) - set(AGG_KEYWORDS))
     return not_passed, unused
@@ -213,11 +197,7 @@ def _param_report(
 def _database_error(
     e: BaseException,
     settings: ConnectionSettings,
-    source: QuerySource,
-    sql: TextClause,
-    is_template: bool,
-    kwargs: dict[str, Any],
-    env: Environment | None,
+    sql: SQL,
 ) -> ConnectError | QueryError | None:
     """
     ConnectError if no statement was sent (SQLAlchemy's `statement is None`),
@@ -237,16 +217,16 @@ def _database_error(
     raw_offset = driver.offset
     if errors.caret_offset(driver.code, raw_offset, stmt.statement) is not None:
         raw_offset = _exact_offset(settings, stmt.statement, driver.code)
-    not_passed, unused = _param_report(source, is_template, kwargs, env)
+    not_passed, unused = _param_report(sql)
     return QueryError(
-        query_name=source.name,
+        query_name=sql.query.name,
         connection=settings.name,
         sql=stmt.statement,
         code=driver.code,
         db_message=driver.message,
         raw_offset=raw_offset,
-        passed=dict(kwargs),
+        passed=dict(sql.params),
         not_passed=not_passed,
         unused=unused,
-        path=source.path,
+        path=sql.query.path,
     )

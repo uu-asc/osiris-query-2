@@ -6,7 +6,6 @@ from unittest import mock
 
 from jinja2 import meta
 from pandas.errors import DatabaseError as PandasDatabaseError
-from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError, InterfaceError, OperationalError, ResourceClosedError
 
 from query import errors, execution
@@ -15,10 +14,8 @@ from query.definition import (
     AGG_KEYWORDS,
     ENV,
     UTIL_KEYWORDS,
-    QuerySource,
     get_environment,
     get_sql,
-    load_query,
 )
 from query.errors import ConnectError, QueryError, QueryNotFound, TemplateError
 
@@ -80,7 +77,7 @@ class QueryErrorTest(ExecutionErrorTest):
         self.report.assert_called_once_with(err)
         self.assertEqual(err.query_name, 'q')
         self.assertEqual(err.connection, 'testdb')
-        self.assertEqual(err.sql, statement)                    # e.statement, not the rendered TextClause
+        self.assertEqual(err.sql, statement)                    # e.statement, not the rendered SQL
         self.assertEqual(err.code, 'ORA-00904')
         self.assertEqual(err.db_message, 'ORA-00904: "COLEGEJAAR": invalid identifier')
         self.assertEqual((err.raw_offset, err.offset), (7, 7))
@@ -123,13 +120,33 @@ class QueryErrorTest(ExecutionErrorTest):
         self.assertIsNone(err.code)
         self.assertEqual(err.db_message, 'Binder Error: column "x" not found')
 
-    def test_text_clause_has_no_parameter_report(self) -> None:
-        self.run_failing(sql_error('select 1'), query=text('select {{ not_a_template }}'))
+    def test_sql_passed_in_keeps_name_and_parameters(self) -> None:
+        sql = get_sql('q', env=self.env, collegejaar=2024, colegejaar=2024)
+        self.run_failing(sql_error(sql.text), query=sql)
+        err = errors.last_error('testdb')
+        self.assertEqual(err.query_name, 'q')
+        self.assertEqual(err.path, str(self.root / 'q.sql'))
+        self.assertEqual(err.passed, {'collegejaar': 2024, 'colegejaar': 2024})
+        self.assertEqual(err.not_passed, ['opleiding'])
+        self.assertEqual(err.unused, ['colegejaar'])
+
+    def test_inline_sql_has_parameter_report(self) -> None:
+        self.run_failing(sql_error('select 1'), query='select {{ x }} from dual')
         err = errors.last_error('testdb')
         self.assertEqual(err.query_name, '<inline>')
-        self.assertIsNone(err.not_passed)
-        self.assertIsNone(err.unused)
+        self.assertEqual(err.not_passed, ['x'])
+        self.assertEqual(err.unused, [])
         self.assertIsNone(err.path)
+
+    def test_get_sql_options_not_in_passed(self) -> None:
+        with mock.patch('builtins.print'):
+            self.run_failing(sql_error('select 1'), collegejaar=2024, print_sql=True)
+        self.assertEqual(errors.last_error('testdb').passed, {'collegejaar': 2024})
+
+    def test_sql_with_parameters_raises(self) -> None:
+        sql = get_sql('q', env=self.env, collegejaar=2024)
+        with self.assertRaises(TypeError):
+            execution.execute_query(sql, settings=SETTINGS, collegejaar=2025)
 
 
 class ExactOffsetTest(unittest.TestCase):
@@ -213,16 +230,25 @@ class OtherErrorsTest(ExecutionErrorTest):
         self.assertIs(errors.last_error('testdb'), cm.exception)
 
 
-class QuerySourcePassThroughTest(ExecutionErrorTest):
-    def test_load_query_returns_query_source_unchanged(self) -> None:
-        source = load_query('q', env=self.env)
-        self.assertIs(load_query(source, env=self.env), source)
+class IndexColTest(ExecutionErrorTest):
+    def index_col(self, query='q', **kwargs):
+        captured = {}
+        def read(sql, con, **kw):
+            captured.update(kw)
+            raise RuntimeError('stop')
+        with mock.patch.object(execution.pd, 'read_sql_query', read), self.assertRaises(RuntimeError):
+            execution.execute_query(query, settings=SETTINGS, env=self.env, **kwargs)
+        return captured['index_col']
 
-    def test_get_sql_does_not_read_again(self) -> None:
-        source = load_query('q', env=self.env)
-        with mock.patch.object(self.env.loader, 'get_source', side_effect=AssertionError('read again')):
-            sql = get_sql(source, env=self.env, collegejaar=2024)
-        self.assertIn('collegejaar = 2024', sql.text)
+    def test_from_columns_keyword(self) -> None:
+        self.assertEqual(self.index_col(collegejaar=2024, columns=['a']), ['a'])
+
+    def test_from_sql_passed_in(self) -> None:
+        sql = get_sql('q', env=self.env, collegejaar=2024, columns=['a'])
+        self.assertEqual(self.index_col(sql), ['a'])
+
+    def test_false_means_none(self) -> None:
+        self.assertIsNone(self.index_col(collegejaar=2024, columns=['a'], index_col=False))
 
 
 class ModuleGetattrTest(unittest.TestCase):

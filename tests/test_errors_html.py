@@ -110,7 +110,7 @@ class QueryErrorHtmlTest(unittest.TestCase):
 
     def test_style_and_no_script(self) -> None:
         html = query_error()._repr_html_()
-        self.assertTrue(html.startswith('<div class="oq2-error">\n<style>'))
+        self.assertTrue(html.startswith('<div class="oq2 error">\n<style>'))
         self.assertEqual(html.count('<style>'), 1)
         self.assertNotIn('<script', html)
 

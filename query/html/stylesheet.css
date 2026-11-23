@@ -1,19 +1,23 @@
 /*
-Error display (query/errors.py). Embedded as a style block in each output.
-Everything is nested under .oq2-error so nothing reaches the rest of the page.
+Error and SQL display (query/errors.py). Embedded as a style block in each output.
+Everything is nested under .oq2 so nothing reaches the rest of the page; errors
+are .oq2.error, rendered SQL is .oq2.sql.
 Colours come from JupyterLab's theme variables; the fallbacks (VS Code, other
 frontends) are mid-tones that read on light and dark backgrounds.
 Some rules reset JupyterLab's own styling of pre and code in HTML output.
 */
-.oq2-error {
+.oq2 {
   --oq2-red: var(--jp-error-color1, #d32f2f);
 
-  border-left: 3px solid var(--oq2-red);
   margin: 4px 0;
-  padding: 2px 0 2px 10px;
   font-family: var(--jp-code-font-family, monospace);
   font-size: var(--jp-code-font-size, 13px);
   line-height: 1.4;
+
+  &.error {
+    border-left: 3px solid var(--oq2-red);
+    padding: 2px 0 2px 10px;
+  }
 
   .header {
     .time { margin-left: 2ch; opacity: .65; }

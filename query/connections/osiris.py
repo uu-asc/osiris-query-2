@@ -27,11 +27,10 @@ from pathlib import Path
 from string import Template
 
 import pandas as pd
-from sqlalchemy import TextClause
 
 from query import definition, execution, utils
 from query.connections import connection
-from query.definition import get_sql, get_raw_sql, get_params, find_query
+from query.definition import SQL, Query, get_sql, get_raw_sql, get_params, find_query
 from query.aggspec import *
 
 SETTINGS = connection.OracleSettings.from_config('osiris')
@@ -51,7 +50,7 @@ quickfilter_docstrings = ['    QUICK FILTERS', *[
 @utils.add_quick_filter('sinh_id')
 @utils.add_quick_filter('io_aanvr_id')
 def execute_query(
-    query: TextClause | Path | str,
+    query: SQL | Query | Path | str,
     parse_dates: list | dict | None = None,
     index_col: str | list[str] | None = None,
     dtype: str | dict | None = None,
@@ -63,7 +62,8 @@ def execute_query(
     Execute a SQL query and return the result as a pandas DataFrame.
 
     Parameters:
-    - query (TextClause | Path | str): SQL query definition, file path, or raw SQL string.
+    - query (SQL | Query | Path | str): Query name or file path, SQL string, a
+        Query, or an SQL from `get_sql`.
     - parse_dates (list | dict | None, optional):
         Columns to parse as dates. Default is None.
     - index_col (str | list[str] | None, optional):

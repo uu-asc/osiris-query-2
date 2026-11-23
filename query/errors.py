@@ -26,6 +26,8 @@ The error objects hold data only. Both renderings are built from the fields:
 
 `report(error)` shows an error: rich display under IPython, text on stderr
 otherwise.
+
+`sql_html(sql)` renders SQL the same way for `definition.SQL`.
 """
 
 import functools
@@ -207,7 +209,7 @@ def _html_env() -> Any:
         lstrip_blocks=True,
     )
     env.filters['linkify'] = _linkify
-    env.globals['css'] = Markup((HTML_DIR / 'error.css').read_text(encoding='utf-8'))
+    env.globals['css'] = Markup((HTML_DIR / 'stylesheet.css').read_text(encoding='utf-8'))
     return env
 
 
@@ -348,6 +350,15 @@ def _html_rows(
     return rows
 
 
+def sql_html(sql: str) -> str:
+    """
+    `sql` as HTML: numbered, highlighted lines in the same style as the SQL in
+    error displays. Used by `definition.SQL` for notebook display.
+    """
+    lines = _segments(sql, 'sql')
+    return _render_html('sql.html.j2', rows=_html_rows(lines, range(1, len(lines) + 1)))
+
+
 class _Displayable:
     """Display hooks shared by the reported errors (not ConfigError)."""
 
@@ -384,11 +395,11 @@ class QueryError(_Displayable, OsirisQueryError):
     - raw_offset: Offset as reported by the driver (bytes for oracledb). For
       Oracle compile-time errors taken from a second parse with
       cursor_sharing = exact (see `execution._exact_offset`).
-    - passed: Keyword arguments as received by `execution.execute_query`.
+    - passed: Template parameters the SQL was rendered with (`SQL.params`).
     - not_passed: Template variables without a value. Some may be optional.
-      None if there is no template (TextClause).
+      None if the template analysis failed.
     - unused: Passed, but neither a template variable nor a library keyword.
-      None if there is no template.
+      None if the template analysis failed.
     - path: Full path of the query file; None for inline SQL.
     - raised_at: When the error occurred.
     - offset: Derived. Character offset in `sql` where the database stopped
