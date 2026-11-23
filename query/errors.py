@@ -381,7 +381,9 @@ class QueryError(_Displayable, OsirisQueryError):
     - sql: The statement as the driver received it.
     - code: Driver error code, e.g. 'ORA-00904'; None if unknown.
     - db_message: Message from the driver.
-    - raw_offset: Offset as reported by the driver (bytes for oracledb).
+    - raw_offset: Offset as reported by the driver (bytes for oracledb). For
+      Oracle compile-time errors taken from a second parse with
+      cursor_sharing = exact (see `execution._exact_offset`).
     - passed: Keyword arguments as received by `execution.execute_query`.
     - not_passed: Template variables without a value. Some may be optional.
       None if there is no template (TextClause).

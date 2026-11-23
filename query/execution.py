@@ -138,6 +138,44 @@ def _driver_error(orig: BaseException) -> DriverError:
     )
 
 
+def _exact_offset(settings: ConnectionSettings, sql: str, code: str) -> int | None:
+    """
+    Error position in `sql`, from parsing it again with cursor_sharing = exact.
+
+    The osiris database runs with cursor_sharing = force: before parsing,
+    Oracle replaces every literal by a bind placeholder, and the error position
+    it reports refers to that rewritten text. In
+
+        select 1 from no_such_table
+
+    the table name is at 14, but Oracle reports 23: '1' became ':"SYS_B_0"'.
+    Each literal before the error shifts the position, so the reported offset
+    is wrong in most real queries (rendered parameters are literals).
+    Parsing again in a session with cursor_sharing = exact (this connection
+    only; nothing is executed) gives the position in the SQL as written.
+
+    Only called for errors that get a caret (see errors.caret_offset), so it
+    costs an extra connection only for compile-time errors. Returns None if
+    the connection isn't Oracle, or the parse fails differently or not at all.
+    Never raises: a failure here only loses the caret.
+    """
+    try:
+        engine = settings.engine()
+        if engine.dialect.name != 'oracle':
+            return None
+        con = engine.raw_connection()
+        try:
+            cur = con.cursor()
+            cur.execute('alter session set cursor_sharing = exact')
+            cur.parse(sql)
+        finally:
+            con.close()
+    except Exception as e:
+        driver = _driver_error(e)
+        return driver.offset if driver.code == code else None
+    return None
+
+
 def _statement_error(e: BaseException | None) -> StatementError | None:
     """
     First SQLAlchemy StatementError in the __cause__ chain of `e`. pandas
@@ -196,6 +234,9 @@ def _database_error(
             code=driver.code,
             db_message=driver.message,
         )
+    raw_offset = driver.offset
+    if errors.caret_offset(driver.code, raw_offset, stmt.statement) is not None:
+        raw_offset = _exact_offset(settings, stmt.statement, driver.code)
     not_passed, unused = _param_report(source, is_template, kwargs, env)
     return QueryError(
         query_name=source.name,
@@ -203,7 +244,7 @@ def _database_error(
         sql=stmt.statement,
         code=driver.code,
         db_message=driver.message,
-        raw_offset=driver.offset,
+        raw_offset=raw_offset,
         passed=dict(kwargs),
         not_passed=not_passed,
         unused=unused,

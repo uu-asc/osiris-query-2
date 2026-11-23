@@ -71,7 +71,9 @@ class ExecutionErrorTest(unittest.TestCase):
 class QueryErrorTest(ExecutionErrorTest):
     def test_sql_error_is_reported_and_stored(self) -> None:
         statement = 'select\n  collegejaar\nfrom t'
-        result = self.run_failing(sql_error(statement), collegejaar=2024, colegejaar=2024)
+        with mock.patch.object(execution, '_exact_offset', return_value=7) as exact:
+            result = self.run_failing(sql_error(statement), collegejaar=2024, colegejaar=2024)
+        exact.assert_called_once_with(SETTINGS, statement, 'ORA-00904')
         self.assertIsNone(result)
         err = errors.last_error('testdb')
         self.assertIsInstance(err, QueryError)
@@ -86,6 +88,13 @@ class QueryErrorTest(ExecutionErrorTest):
         self.assertEqual(err.not_passed, ['opleiding'])
         self.assertEqual(err.unused, ['colegejaar'])
         self.assertEqual(err.path, str(self.root / 'q.sql'))
+
+    def test_no_exact_parse_without_caret(self) -> None:
+        orig = DriverException('ORA-01476', 'ORA-01476: divisor is equal to zero', offset=9)
+        with mock.patch.object(execution, '_exact_offset') as exact:
+            self.run_failing(DatabaseError('select 1/0 from dual', {}, orig), collegejaar=2024)
+        exact.assert_not_called()
+        self.assertEqual(errors.last_error('testdb').raw_offset, 9)
 
     def test_library_keywords_are_not_unused(self) -> None:
         self.run_failing(sql_error('select 1'), collegejaar=2024, where='a = 1', label_na='-')
@@ -121,6 +130,52 @@ class QueryErrorTest(ExecutionErrorTest):
         self.assertIsNone(err.not_passed)
         self.assertIsNone(err.unused)
         self.assertIsNone(err.path)
+
+
+class ExactOffsetTest(unittest.TestCase):
+    """execution._exact_offset with a fake engine: no database needed."""
+    def settings(self, dialect='oracle', parse_error=None, connect_error=None):
+        statements = []
+        def execute(sql):
+            statements.append(sql)
+        def parse(sql):
+            statements.append(('parse', sql))
+            if parse_error is not None:
+                raise parse_error
+        def raw_connection():
+            if connect_error is not None:
+                raise connect_error
+            cursor = SimpleNamespace(execute=execute, parse=parse)
+            return SimpleNamespace(cursor=lambda: cursor, close=lambda: statements.append('close'))
+        engine = SimpleNamespace(dialect=SimpleNamespace(name=dialect), raw_connection=raw_connection)
+        return SimpleNamespace(name='testdb', engine=lambda: engine), statements
+
+    def test_offset_from_exact_parse(self) -> None:
+        settings, statements = self.settings(parse_error=DriverException('ORA-00942', 'ORA-00942', offset=14))
+        self.assertEqual(execution._exact_offset(settings, 'select 1 from x', 'ORA-00942'), 14)
+        self.assertEqual(statements, [
+            'alter session set cursor_sharing = exact',
+            ('parse', 'select 1 from x'),
+            'close',
+        ])
+
+    def test_different_code(self) -> None:
+        settings, _ = self.settings(parse_error=DriverException('ORA-00904', 'ORA-00904', offset=7))
+        self.assertIsNone(execution._exact_offset(settings, 'select 1', 'ORA-00942'))
+
+    def test_parse_succeeds(self) -> None:
+        settings, statements = self.settings()
+        self.assertIsNone(execution._exact_offset(settings, 'select 1', 'ORA-00942'))
+        self.assertEqual(statements[-1], 'close')
+
+    def test_not_oracle(self) -> None:
+        settings, statements = self.settings(dialect='duckdb')
+        self.assertIsNone(execution._exact_offset(settings, 'select 1', 'ORA-00942'))
+        self.assertEqual(statements, [])
+
+    def test_connect_fails(self) -> None:
+        settings, _ = self.settings(connect_error=OSError('down'))
+        self.assertIsNone(execution._exact_offset(settings, 'select 1', 'ORA-00942'))
 
 
 class ConnectErrorTest(ExecutionErrorTest):
