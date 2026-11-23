@@ -280,7 +280,7 @@ def _find(name: str | Path, env: Environment) -> Query | None:
     return Query(text, name=str(name), path=filename, env=env)
 
 
-def _as_query(source: 'Query|Path|str', env: Environment|None) -> Query:
+def as_query(source: 'Query|Path|str', env: Environment|None = None) -> Query:
     """
     `source` as a Query. A Query is returned unchanged (with its own env). A
     string or Path is, in this order:
@@ -288,6 +288,8 @@ def _as_query(source: 'Query|Path|str', env: Environment|None) -> Query:
     2. a query file the loader finds, or an existing absolute path: that file;
     3. a string whose first word is in _SQL_START: SQL;
     4. otherwise QueryNotFound.
+    Anything else, including an SQL, raises TypeError: an SQL is already
+    rendered, so its callers (get_sql, QueryExecution) handle it themselves.
     """
     if isinstance(source, Query):
         return source
@@ -349,7 +351,7 @@ def get_sql(
                 f"query is already rendered; parameters {sorted(kwargs)} would be ignored"
             )
         return source
-    query = _as_query(source, env)
+    query = as_query(source, env)
 
     if print_vars:
         print(query.params())
@@ -380,7 +382,7 @@ def get_params(
     Returns:
     set: Set of variables in query statement.
     """
-    return _as_query(source, env).params()
+    return as_query(source, env).params()
 
 
 def get_raw_sql(
@@ -417,7 +419,7 @@ def try_path(
     Returns:
     SqlString: A string representing a sql query.
     """
-    return _as_query(source, env).text
+    return as_query(source, env).text
 
 
 # region errors

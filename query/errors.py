@@ -15,6 +15,7 @@ Driver details are read by duck typing where the errors are created.
 - QueryNotFound: the query file was not found.
 - KeywordError: library keywords (where, values, totals, ...) were passed in
   an invalid way; nothing was sent.
+- QueryCancelled: the execution was cancelled (`QueryExecution.cancel()`).
 
 The error objects hold data only. Both renderings are built from the fields:
 - text (`__str__`): logs, stderr, and the traceback IPython shows when the
@@ -674,6 +675,44 @@ class KeywordError(_Displayable, OsirisQueryError):
             title=title,
             raised_at=_timestamp(self.raised_at),
             message=self.message,
+        )
+
+
+@dataclass(eq=False)
+class QueryCancelled(_Displayable, OsirisQueryError):
+    """
+    The execution was cancelled with `QueryExecution.cancel()`. No partial
+    result is returned.
+
+    Fields:
+    - query_name: Query path, or '<inline>' for inline SQL.
+    - connection: Connection name (settings.name).
+    - raised_at: When the error occurred.
+    """
+    query_name: str
+    connection: str
+    raised_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self) -> None:
+        super().__init__('query cancelled')
+
+    def __repr__(self) -> str:
+        return f"QueryCancelled(query={self.query_name!r}, connection={self.connection!r})"
+
+    def __str__(self) -> str:
+        return '\n'.join([
+            f"QueryCancelled [{self.connection}] {self.query_name}  ({_timestamp(self.raised_at)})",
+            'query cancelled',
+        ])
+
+    def _repr_html_(self) -> str:
+        return _render_html(
+            'base.html.j2',
+            e=self,
+            kind='QueryCancelled',
+            title=[self.connection, self.query_name],
+            raised_at=_timestamp(self.raised_at),
+            message='query cancelled',
         )
 
 

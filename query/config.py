@@ -383,3 +383,15 @@ class ConnectionSettings:
     def engine(self) -> 'Engine':
         """Create a SQLAlchemy engine for this connection."""
         raise NotImplementedError
+
+    def cancel(self, con: Any) -> None:
+        """
+        Stop the statement running on `con`, from another thread. `con` is
+        what `engine().raw_connection()` returned; SQLAlchemy's wrapper passes
+        unknown attributes on to the driver connection.
+
+        Used by `QueryExecution.cancel()` during the execute phase. The base
+        does nothing: for a driver without an override, a cancel only takes
+        effect between fetched batches. Subclasses override it with their
+        driver's call.
+        """

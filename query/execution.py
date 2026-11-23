@@ -1,7 +1,13 @@
+import threading
+import time
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pandas as pd
+from pandas.io.sql import _wrap_result
 from jinja2 import Environment
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, StatementError
@@ -10,7 +16,14 @@ from pandas.errors import DatabaseError as PandasDatabaseError
 from query import definition, errors, utils
 from query.config import ConnectionSettings
 from query.definition import AGG_KEYWORDS, SQL, UTIL_KEYWORDS, Query
-from query.errors import ConnectError, KeywordError, QueryError, QueryNotFound, TemplateError
+from query.errors import (
+    ConnectError,
+    KeywordError,
+    QueryCancelled,
+    QueryError,
+    QueryNotFound,
+    TemplateError,
+)
 
 
 @utils.add_to_docstring(definition.DOCSTRING)
@@ -104,6 +117,349 @@ def execute_query(
             raise error from e
         errors.report(error)
         return None
+
+
+# region QueryExecution
+DEFAULT_CHUNKSIZE = 10_000      # batch size when the dialect has no arraysize
+
+
+class Phase(StrEnum):
+    PENDING = 'pending'
+    CONNECTING = 'connecting'
+    EXECUTING = 'executing'
+    FETCHING = 'fetching'
+    DONE = 'done'
+    FAILED = 'failed'
+    CANCELLED = 'cancelled'
+
+
+_ENDED = frozenset({Phase.DONE, Phase.FAILED, Phase.CANCELLED})
+
+
+@dataclass(frozen=True)
+class Progress:
+    """
+    State of an execution. `rows` counts the rows fetched from the database
+    (with max_rows this can be one more than returned); `elapsed` runs from
+    the start of the run (0 before it).
+    """
+    phase: Phase
+    rows: int
+    elapsed: float
+
+
+@dataclass
+class FetchResult:
+    """
+    Result of `QueryExecution.fetch()`. `truncated` is True if the result had
+    more than max_rows rows; `nbytes` is the frame's memory use.
+    """
+    df: pd.DataFrame
+    truncated: bool
+    rows: int
+    nbytes: int
+    elapsed: float
+
+
+class QueryExecution:
+    """
+    One execution of one query: render, connect, execute, fetch. Used once.
+
+    Rendering happens here, so QueryNotFound, TemplateError and KeywordError
+    are raised on creation; `sql` can be inspected before running. `fetch()`
+    returns one DataFrame, `chunks()` yields one per batch. `cancel()` and
+    `progress` can be used from another thread.
+
+    Phases: pending -> connecting -> executing -> fetching -> done, or failed
+    / cancelled from any running phase.
+
+    Errors (always raised): ConnectError, QueryError, QueryCancelled. A cancel
+    gives no partial result; use max_rows or chunks() to stop and keep rows.
+
+    Parameters:
+    - query (SQL | Query | Path | str): Query name or file path, SQL string,
+        a Query, or an SQL (then `params` must be empty).
+    - settings (ConnectionSettings): `engine()` to connect, `cancel()` to
+        stop a running statement, `name` for errors.
+    - params (dict | None): Template parameters.
+    - env (Environment | None): Jinja2 environment for a name or string.
+    """
+
+    def __init__(
+        self,
+        query: SQL | Query | Path | str,
+        *,
+        settings: ConnectionSettings,
+        params: dict[str, Any] | None = None,
+        env: Environment | None = None,
+    ) -> None:
+        if isinstance(query, SQL):
+            if params:
+                raise TypeError(
+                    f"query is already rendered; parameters {sorted(params)} would be ignored"
+                )
+            self.sql = query
+        else:
+            self.sql = definition.as_query(query, env).render(**(params or {}))
+        self.settings = settings
+        self._lock = threading.Lock()   # guards the fields below against cancel() and progress
+        self._phase = Phase.PENDING
+        self._rows = 0
+        self._start: float | None = None
+        self._end: float | None = None
+        self._cancelled = False
+        self._dbapi_con: Any = None     # set while the statement runs, for cancel()
+        self._columns: list[str] = []
+
+    @property
+    def progress(self) -> Progress:
+        with self._lock:
+            if self._start is None:
+                elapsed = 0.0
+            else:
+                elapsed = (self._end or time.monotonic()) - self._start
+            return Progress(self._phase, self._rows, elapsed)
+
+    def cancel(self) -> None:
+        """
+        Stop the execution; thread-safe. While executing, the driver is asked
+        to stop the statement (settings.cancel); otherwise a flag stops the
+        execution at the next step. No-op once the execution has ended.
+        """
+        with self._lock:
+            if self._phase in _ENDED:
+                return
+            self._cancelled = True
+            if self._phase is Phase.EXECUTING and self._dbapi_con is not None:
+                self.settings.cancel(self._dbapi_con)
+
+    def fetch(
+        self,
+        *,
+        max_rows: int | None = None,
+        chunksize: int | None = None,
+        on_progress: Callable[[Progress], None] | None = None,
+        dtype_backend: str = 'numpy_nullable',
+        parse_dates: list | dict | None = None,
+        index_col: str | list[str] | None = None,
+        dtype: str | dict | None = None,
+    ) -> FetchResult:
+        """
+        Run the query and return the result as one DataFrame.
+
+        - max_rows: stop after this many rows; `truncated` says whether there
+            were more. None: no limit.
+        - chunksize: rows per batch (limit, cancel and progress act between
+            batches). Default: the dialect's arraysize, otherwise 10,000.
+        - on_progress: called on every phase change and after every batch,
+            on this thread.
+        - dtype_backend, parse_dates, index_col, dtype: as for
+            pd.read_sql_query, which builds its frame the same way.
+        """
+        data: list[tuple] = []
+        truncated = False
+        batches = self._batches(chunksize, max_rows, on_progress)
+        try:
+            for rows in batches:
+                data.extend(rows)
+                if max_rows is not None and len(data) > max_rows:
+                    truncated = True
+                    del data[max_rows:]
+                    break
+        finally:
+            batches.close()     # stops the generator: cursor and connection closed
+        df = _frame(
+            data, self._columns,
+            dtype_backend=dtype_backend, parse_dates=parse_dates, index_col=index_col, dtype=dtype,
+        )
+        return FetchResult(
+            df=df,
+            truncated=truncated,
+            rows=len(data),
+            nbytes=int(df.memory_usage(deep=True).sum()),
+            elapsed=self.progress.elapsed,
+        )
+
+    def chunks(
+        self,
+        *,
+        chunksize: int | None = None,
+        dtype_backend: str = 'numpy_nullable',
+        parse_dates: list | dict | None = None,
+        index_col: str | list[str] | None = None,
+        dtype: str | dict | None = None,
+    ) -> Iterator[pd.DataFrame]:
+        """
+        Run the query and yield a DataFrame per batch. Stopping early (break)
+        closes the connection and ends the execution as done. Dtypes are
+        inferred per chunk and can differ between chunks.
+        """
+        batches = self._batches(chunksize, None, None)
+        try:
+            for rows in batches:
+                yield _frame(
+                    rows, self._columns,
+                    dtype_backend=dtype_backend, parse_dates=parse_dates, index_col=index_col, dtype=dtype,
+                )
+        finally:
+            batches.close()
+
+    def _batches(
+        self,
+        chunksize: int | None,
+        max_rows: int | None,
+        on_progress: Callable[[Progress], None] | None,
+    ) -> Iterator[list[tuple]]:
+        """
+        Connect, execute and fetch; yield raw row batches. Shared by fetch()
+        and chunks(). Keeps phase and row count; closing the generator early
+        (max_rows, break) ends the execution as done.
+        """
+        report = on_progress or (lambda progress: None)
+        self._begin()
+        report(self.progress)
+        engine = self.settings.engine()
+        try:
+            try:
+                con = engine.raw_connection()
+            except DBAPIError as e:
+                raise self._connect_error(e) from e
+            try:
+                if not self._executing(con):
+                    raise self._cancelled_error()     # cancelled while connecting
+                report(self.progress)
+                try:
+                    cursor, size = _cursor(con, engine.dialect, chunksize, max_rows)
+                    cursor.execute(self.sql.text)
+                    self._columns = _column_names(cursor.description, engine.dialect)
+                    with self._lock:
+                        self._phase = Phase.FETCHING
+                    report(self.progress)
+                    while not self._cancelled:
+                        rows = cursor.fetchmany(size)
+                        if not rows:
+                            break
+                        with self._lock:
+                            self._rows += len(rows)
+                        yield rows
+                        report(self.progress)
+                except engine.dialect.loaded_dbapi.Error as e:
+                    # A cancel during execute always ends in a driver error.
+                    if self._cancelled:
+                        raise self._cancelled_error() from e
+                    raise self._query_error(e) from e
+                if self._cancelled:
+                    raise self._cancelled_error()
+            finally:
+                with self._lock:
+                    self._dbapi_con = None
+                con.close()
+        except QueryCancelled:
+            self._finish(Phase.CANCELLED)
+            report(self.progress)
+            raise
+        except GeneratorExit:       # the caller stopped early: max_rows, or break in chunks()
+            self._finish(Phase.DONE)
+            report(self.progress)
+            raise
+        except BaseException:
+            self._finish(Phase.FAILED)
+            report(self.progress)
+            raise
+        self._finish(Phase.DONE)
+        report(self.progress)
+
+    def _begin(self) -> None:
+        with self._lock:
+            if self._phase is not Phase.PENDING:
+                raise RuntimeError("QueryExecution runs once; create a new one to run again")
+            self._phase = Phase.CONNECTING
+            self._start = time.monotonic()
+
+    def _executing(self, con: Any) -> bool:
+        """Phase executing with `con`; False if cancel() came while connecting."""
+        with self._lock:
+            if self._cancelled:
+                return False
+            self._phase = Phase.EXECUTING
+            self._dbapi_con = con
+            return True
+
+    def _finish(self, phase: Phase) -> None:
+        with self._lock:
+            self._phase = phase
+            self._end = time.monotonic()
+
+    def _connect_error(self, e: DBAPIError) -> ConnectError:
+        driver = _driver_error(e.orig if e.orig is not None else e)
+        return ConnectError(
+            connection=self.settings.name,
+            code=driver.code,
+            db_message=driver.message,
+        )
+
+    def _query_error(self, orig: BaseException) -> QueryError:
+        driver = _driver_error(orig)
+        raw_offset = driver.offset
+        if errors.caret_offset(driver.code, raw_offset, self.sql.text) is not None:
+            raw_offset = _exact_offset(self.settings, self.sql.text, driver.code)
+        not_passed, unused = _param_report(self.sql)
+        return QueryError(
+            query_name=self.sql.query.name,
+            connection=self.settings.name,
+            sql=self.sql.text,
+            code=driver.code,
+            db_message=driver.message,
+            raw_offset=raw_offset,
+            passed=dict(self.sql.params),
+            not_passed=not_passed,
+            unused=unused,
+            path=self.sql.query.path,
+        )
+
+    def _cancelled_error(self) -> QueryCancelled:
+        return QueryCancelled(query_name=self.sql.query.name, connection=self.settings.name)
+
+
+def _cursor(con: Any, dialect: Any, chunksize: int | None, max_rows: int | None) -> tuple[Any, int]:
+    """
+    A cursor on `con` and the batch size. Batch size: `chunksize`, else the
+    dialect's arraysize (Oracle), else DEFAULT_CHUNKSIZE; with max_rows capped
+    at max_rows + 1 (one extra row tells whether the result is truncated).
+    fetchmany(n) makes round trips until it has n rows, so the batch size is
+    capped as well as the round trip size. cursor.arraysize is set only when
+    the dialect has one: only Oracle fetches in round trips of that size.
+    """
+    arraysize = getattr(dialect, 'arraysize', None)
+    size = chunksize or arraysize or DEFAULT_CHUNKSIZE
+    if max_rows is not None:
+        size = min(size, max_rows + 1)
+    cursor = con.cursor()
+    if arraysize:
+        cursor.arraysize = min(arraysize, size)
+    return cursor, size
+
+
+def _column_names(description: Any, dialect: Any) -> list[str]:
+    """
+    Column names as SQLAlchemy reports them on the read_sql_query path. For
+    dialects that normalize names (Oracle), case-insensitive uppercase names
+    become lowercase (SINH_ID -> sinh_id); quoted mixed-case names stay as
+    they are. Other dialects: names as the driver reports them.
+    """
+    names = [d[0] for d in description]
+    if getattr(dialect, 'requires_name_normalize', False):
+        names = [dialect.normalize_name(name) for name in names]
+    return names
+
+
+def _frame(data: list[tuple], columns: list[str], **options: Any) -> pd.DataFrame:
+    """
+    DataFrame from raw rows, built as pd.read_sql_query builds it (pandas'
+    private _wrap_result), so dtypes match the old path. A pandas upgrade that
+    renames or changes it fails here loudly; the parity test guards behaviour.
+    """
+    return _wrap_result(data, columns, **options)
 
 
 # region database errors

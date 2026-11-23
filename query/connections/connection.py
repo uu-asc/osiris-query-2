@@ -211,6 +211,10 @@ class OracleSettings(ConnectionSettings):
             connect_args = self.connect_args,
         )
 
+    def cancel(self, con: Any) -> None:
+        """The running statement ends with ORA-01013."""
+        con.cancel()
+
 
 @dataclass(frozen=True, kw_only=True)
 class MssqlSettings(ConnectionSettings):
@@ -259,3 +263,7 @@ class DuckdbSettings(ConnectionSettings):
             database = str(self.database),
             connect_args = self.connect_args,
         )
+
+    def cancel(self, con: Any) -> None:
+        """duckdb's interrupt(). Untested (no duckdb tests yet)."""
+        con.interrupt()
