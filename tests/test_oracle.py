@@ -38,6 +38,88 @@ OFFSET_CASES = [
 ]
 
 
+# Real database work for the execute-phase cancel. Runs ~44 s on its own
+# (2026-11-23), so a cancel that stops working costs under a minute.
+# Cancel latency measured then: 0.0 s when cancelled at 5 s, 0.1 s at 20 s.
+HEAVY = """select count(*)
+from (select level l from dual connect by level <= 100000) a,
+     (select level l from dual connect by level <= 1000) b
+where mod(a.l + b.l, 7) = 3"""
+
+# Types whose conversion is set by SQLAlchemy's oracledb output type handler
+# (CLOB, decimal NUMBER, DATE), NULLs in each, and a quoted mixed-case alias
+# that name normalization must leave alone.
+PARITY = """select
+  level as id,
+  case when mod(level, 3) = 0 then null else to_clob(rpad('x', level * 10, 'y')) end as txt_clob,
+  case when mod(level, 4) = 0 then null else level / 8 end as num_dec,
+  case when mod(level, 5) = 0 then null else date '2024-01-01' + level end as dt,
+  'a' as "MixedCase"
+from dual connect by level <= 20"""
+
+
+@unittest.skipUnless(os.environ.get('OQ2_ORACLE_TESTS'), 'set OQ2_ORACLE_TESTS to run Oracle tests')
+class TestOracleExecution(unittest.TestCase):
+    def test_cancel_during_execute(self) -> None:
+        import threading
+        from query import errors, execution
+        from query.connections import osiris
+
+        ex = execution.QueryExecution(HEAVY, settings=osiris.SETTINGS)
+        timer = threading.Timer(2, ex.cancel)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        with self.assertRaises(errors.QueryCancelled) as cm:
+            ex.fetch()
+        cause = cm.exception.__cause__
+        self.assertIsNotNone(cause, 'cancelled before the statement was sent')
+        self.assertEqual(execution._driver_error(cause).code, 'ORA-01013')
+        self.assertIs(ex.progress.phase, execution.Phase.CANCELLED)
+
+    def test_cancel_during_fetch(self) -> None:
+        from query import errors, execution
+        from query.connections import osiris
+
+        ex = execution.QueryExecution(
+            'select level as x from dual connect by level <= 100000', settings=osiris.SETTINGS,
+        )
+
+        def cancel_after_first_batch(p: execution.Progress) -> None:
+            if p.phase is execution.Phase.FETCHING and p.rows:
+                ex.cancel()
+
+        with self.assertRaises(errors.QueryCancelled) as cm:
+            ex.fetch(chunksize=1000, on_progress=cancel_after_first_batch)
+        self.assertIsNone(cm.exception.__cause__)                  # flag, no driver error
+        self.assertIs(ex.progress.phase, execution.Phase.CANCELLED)
+        self.assertEqual(ex.progress.rows, 1000)
+
+    def test_parity_with_read_sql_query(self) -> None:
+        """
+        execute_query (read_sql_query over SQLAlchemy) and QueryExecution (raw
+        cursor + _wrap_result) give the same frame. Run before deploying a
+        pandas, SQLAlchemy or oracledb upgrade.
+        """
+        import importlib.util
+        import pandas as pd
+        from query import execution
+        from query.connections import osiris
+
+        for backend in ('numpy_nullable', 'pyarrow'):
+            with self.subTest(dtype_backend=backend):
+                if backend == 'pyarrow' and importlib.util.find_spec('pyarrow') is None:
+                    self.skipTest('pyarrow not installed')
+                old = execution.execute_query(
+                    PARITY, settings=osiris.SETTINGS,
+                    dtype_backend=backend, squeeze=False, raise_errors=True,
+                )
+                new = execution.QueryExecution(PARITY, settings=osiris.SETTINGS).fetch(
+                    chunksize=7, dtype_backend=backend,
+                ).df
+                self.assertEqual(list(new.columns), ['id', 'txt_clob', 'num_dec', 'dt', 'MixedCase'])
+                pd.testing.assert_frame_equal(new, old)
+
+
 @unittest.skipUnless(os.environ.get('OQ2_ORACLE_TESTS'), 'set OQ2_ORACLE_TESTS to run Oracle tests')
 class TestOracleConnection(unittest.TestCase):
     def test_arraysize_reaches_cursor(self) -> None:

@@ -175,6 +175,7 @@ class QueryExecution:
 
     Errors (always raised): ConnectError, QueryError, QueryCancelled. A cancel
     gives no partial result; use max_rows or chunks() to stop and keep rows.
+    A statement without a result set raises TypeError after it has run.
 
     Parameters:
     - query (SQL | Query | Path | str): Query name or file path, SQL string,
@@ -331,6 +332,10 @@ class QueryExecution:
                 try:
                     cursor, size = _cursor(con, engine.dialect, chunksize, max_rows)
                     cursor.execute(self.sql.text)
+                    if cursor.description is None:    # PL/SQL block, DML, DDL: has already run
+                        raise TypeError(
+                            "statement returned no result set; only queries that return rows are supported"
+                        )
                     self._columns = _column_names(cursor.description, engine.dialect)
                     with self._lock:
                         self._phase = Phase.FETCHING

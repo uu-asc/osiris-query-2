@@ -222,6 +222,12 @@ class ErrorTest(unittest.TestCase):
         self.assertIn('unable to open', cm.exception.db_message)
         self.assertEqual(ex.progress.phase, Phase.FAILED)
 
+    def test_no_result_set(self) -> None:
+        ex = QueryExecution('create table t (x int)\n', settings=FakeSettings())
+        with self.assertRaisesRegex(TypeError, 'no result set'):
+            ex.fetch()
+        self.assertEqual(ex.progress.phase, Phase.FAILED)
+
     def test_single_use(self) -> None:
         ex = QueryExecution(rows(3), settings=FakeSettings())
         ex.fetch()
