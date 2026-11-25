@@ -107,7 +107,7 @@ AGG_KEYWORDS: list[str] = [
 # a test checks it against both signatures.
 EXECUTION_KEYWORDS: frozenset[str] = frozenset({
     'env', 'parse_dates', 'index_col', 'dtype', 'dtype_backend', 'squeeze',
-    'raise_errors', 'max_rows',
+    'raise_errors', 'max_rows', 'progress',
     'print_sql', 'save_to_path', 'print_vars',
 })
 # Defaults for the aggregation keywords, from config; applied by Query.render.

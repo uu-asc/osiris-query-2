@@ -24,6 +24,7 @@ from query.errors import (
     QueryNotFound,
     TemplateError,
 )
+from query.status import StatusLine
 
 
 @utils.add_to_docstring(definition.DOCSTRING)
@@ -40,6 +41,7 @@ def execute_query(
     squeeze: bool = True,
     raise_errors: bool = False,
     max_rows: int | None = None,
+    progress: bool = True,
     **kwargs
 ) -> pd.DataFrame | pd.Series | None:
     """
@@ -71,6 +73,10 @@ def execute_query(
     - max_rows (int | None):
         Stop fetching after this many rows. A client-side limit: the query is
         not changed (unlike the `n` keyword). Default is None (no limit).
+    - progress (bool):
+        Show a status line for queries that run longer than 2 s: updated in
+        place in a notebook, a final line on stderr elsewhere. A truncated
+        result (max_rows) always gets the final line. Default is True.
     - **kwargs:
         Additional keyword arguments passed to the query definition. A
         template variable with the name of one of this function's keywords
@@ -87,6 +93,9 @@ def execute_query(
     - ConnectError, QueryError: Only with `raise_errors=True`.
     - TypeError: `query` is an SQL and template keywords were passed, or the
         statement returned no result set (after it has run).
+    - KeyboardInterrupt: On an interrupt, after the statement was cancelled.
+        A second interrupt stops waiting for the cancel; the statement may
+        then still be running on the database.
     The errors of this library are stored as `<connection module>.last_error`.
     """
     dtype_backend = 'numpy_nullable' if dtype_backend is None else dtype_backend
@@ -100,8 +109,11 @@ def execute_query(
         index_col = sql.params.get('columns')
     elif index_col == False:
         index_col = None
+    ex = QueryExecution(sql, settings=settings)
+    status = StatusLine(settings.name, sql.query.name, live=progress)
     try:
-        result = QueryExecution(sql, settings=settings).fetch(
+        result = _fetch_watched(
+            ex, status,
             max_rows = max_rows,
             parse_dates = parse_dates,
             index_col = index_col,
@@ -114,12 +126,61 @@ def execute_query(
             raise
         errors.report(error)
         return None
+    status.done(result)
     df = result.df
     if squeeze and len(df.columns) == 1:
         return df.squeeze(axis=1)
     if squeeze and len(df) == 1:
         return df.squeeze().rename(sql.query.name)
     return df
+
+
+def _fetch_watched(ex: 'QueryExecution', status: StatusLine, **fetch_options: Any) -> 'FetchResult':
+    """
+    Run `ex.fetch(**fetch_options)` on a worker thread. This thread waits,
+    updates the status line and handles an interrupt: cancel, wait for the
+    worker, re-raise KeyboardInterrupt. A second interrupt stops waiting; the
+    worker (a daemon thread) then finishes on its own and closes its
+    connection.
+
+    The worker is needed because on Windows an interrupt doesn't reach a
+    thread that is waiting in the driver. Waiting is on an Event, never on
+    join() or is_alive(): after an interrupted join, is_alive() can report a
+    running thread as stopped (measured on Windows, Python 3.12).
+
+    Errors from the worker are re-raised here. A result that arrives together
+    with an interrupt is discarded: the interrupt wins.
+    """
+    outcome: dict[str, Any] = {}
+    ended = threading.Event()
+
+    def work() -> None:
+        try:
+            outcome['result'] = ex.fetch(**fetch_options)
+        except BaseException as e:
+            outcome['error'] = e
+        finally:
+            ended.set()
+
+    threading.Thread(target=work, name=f'oq2 {ex.sql.query.name}', daemon=True).start()
+    try:
+        while not ended.wait(timeout=0.5):
+            status.update(ex.progress)
+    except KeyboardInterrupt:
+        status.cancel_requested(ex.progress)
+        ex.cancel()
+        try:
+            while not ended.wait(timeout=0.5):
+                status.update(ex.progress)
+        except KeyboardInterrupt:
+            status.stopped_waiting(ex.progress)
+            raise
+        status.update(ex.progress)          # cancelled after ...
+        raise
+    status.update(ex.progress)              # failed after ..., if the line was showing
+    if 'error' in outcome:
+        raise outcome['error']
+    return outcome['result']
 
 
 # region QueryExecution

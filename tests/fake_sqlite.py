@@ -63,6 +63,7 @@ class FakeEngine:
     def raw_connection(self) -> sqlite3.Connection:
         if self.settings.connect_error:
             raise OperationalError(None, None, sqlite3.OperationalError('unable to open database file'))
-        con = sqlite3.connect(':memory:')
+        # execute_query fetches on a worker thread; tests check the connection from the main thread.
+        con = sqlite3.connect(':memory:', check_same_thread=False)
         self.settings.connections.append(con)
         return con
